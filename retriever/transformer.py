@@ -5,6 +5,29 @@ import torch
 import torch.nn as nn
 
 
+class AddNorm(nn.Module):
+    """Add and normalization
+    """
+    def __init__(self, channels: int, sublayer: nn.Module):
+        """Initializer.
+        Args:
+            channels: size of the input channels.
+            sublayer: Sub-layer.
+        """
+        super().__init__()
+        self.layernorm = nn.LayerNorm(channels)
+        self.sublayer = sublayer
+
+    def forward(self, inputs: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Transform, add and normalize.
+        Args:
+            inputs: [torch.float32; [...]], input tensor.
+        Returns:
+            [torch.float32; [...]], residually connected.
+        """
+        return self.layernorm(inputs + self.sublayer(inputs, *args, **kwargs))
+
+
 class MultiheadAttention(nn.Module):
     """Multihead scaled dot-product attention.
     """
@@ -22,39 +45,44 @@ class MultiheadAttention(nn.Module):
         self.proj_out = nn.Linear(channels, channels)
 
     def forward(self,
-                key: torch.Tensor,
                 query: torch.Tensor,
+                key: torch.Tensor,
                 value: torch.Tensor,
-                mask: torch.Tensor):
+                mask: Optional[torch.Tensor] = None):
         """Transform the inputs.
         Args:
-            key: [torch.float32; [B, S, C]], key.
-            query: [torch.float32; [B, T, C]], query.
-            value: [torch.float32; [B, S, C]], value.
-            mask: [torch.float32; [B, T, S]], attention mask.
+            query: [torch.float32; [B, S, C]], query.
+            key: [torch.float32; [B, T, C]], key.
+            value: [torch.float32; [B, T, C]], value.
+            mask: [torch.float32; [B, S, T]], attention mask.
         """
         # B, S
-        bsize, keylen, _ = key.shape
+        bsize, querylen, _ = query.shape
         # T
-        querylen = query.shape[1]
-        # [B, S, H, C // H]
+        keylen = key.shape[1]
+        # [B, T, H, C // H]
         key = self.proj_key(key).view(
             bsize, keylen, self.heads, self.channels)
         value = self.proj_value(value).view(
             bsize, keylen, self.heads, self.channels)
-        # [B, T, H, C // H]
+        # [B, S, H, C // H]
         query = self.proj_query(query).view(
             bsize, querylen, self.heads, self.channels)
-        # [B, H, T, S]
+        # [B, H, S, T]
         score = torch.matmul(
             query.permute(0, 2, 1, 3),
             key.permute(0, 2, 3, 1)) * (self.channels ** -0.5)
-        score.masked_fill_(~mask[:, None, 0:1].to(torch.bool), -np.inf)
+        if mask is not None:
+            score.masked_fill_(~mask[:, None, 0:1].to(torch.bool), -np.inf)
         weights = torch.softmax(score, dim=-1)
-        # [B, H, T, C // H]
+        # [B, H, S, C // H]
         out = torch.matmul(weights, value.transpose(1, 2))
-        # [B, T, C]
-        return self.proj_out(out.transpose(1, 2).view(bsize, querylen, -1))
+        # [B, S, C]
+        out = self.proj_out(out.transpose(1, 2).view(bsize, querylen, -1))
+        if mask is None:
+            # [B, S, C]
+            out = out * mask[..., 0:1]
+        return out
 
 
 class FeedForward(nn.Sequential):
