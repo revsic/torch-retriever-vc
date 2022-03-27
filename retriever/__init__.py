@@ -19,6 +19,7 @@ class Retriever(nn.Module):
             config: model configurations.
         """
         super().__init__()
+        self.mel = config.mel
         self.reduction = config.reduction
         self.prenet = nn.Sequential(
             # patch embedding
@@ -38,13 +39,11 @@ class Retriever(nn.Module):
         self.retriever = CrossAttention(
             config.channels, config.heads, config.styles, config.ret_blocks)
 
-        self.decoder = nn.Sequential(
-            LinkAttention(
-                config.dec_kernels, config.channels, config.heads,
-                config.styles, config.dec_blocks),
-            nn.ConvTranspose1d(
-                config.channels, config.mel, config.reduction,
-                stride=config.reduction))
+        self.decoder = LinkAttention(
+            config.dec_kernels, config.channels, config.heads,
+            config.styles, config.dec_blocks)
+
+        self.proj_out = nn.Linear(config.channels, config.mel * config.reduction)
 
     def forward(self,
                 mel: torch.Tensor,
@@ -91,7 +90,9 @@ class Retriever(nn.Module):
             # [B, S, C]
             refstyle = style
         # [B, T x R, mel]
-        synth = self.decoder(contents, refstyle, mask=mask)
+        synth = self.proj_out(
+                self.decoder(contents, refstyle, mask=mask)
+            ).view(contents.shape[0], -1, self.mel)
         if rest is not None:
             # [B, T x R, mel]
             synth = synth[:, :-rest]
