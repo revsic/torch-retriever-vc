@@ -48,13 +48,15 @@ class MultiheadAttention(nn.Module):
                 query: torch.Tensor,
                 key: torch.Tensor,
                 value: torch.Tensor,
-                mask: Optional[torch.Tensor] = None):
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Transform the inputs.
         Args:
             query: [torch.float32; [B, S, C]], query.
             key: [torch.float32; [B, T, C]], key.
             value: [torch.float32; [B, T, C]], value.
             mask: [torch.float32; [B, S, T]], attention mask.
+        Returns:
+            [torch.float32; [B, S, C]], attended.
         """
         # B, S
         bsize, querylen, _ = query.shape
