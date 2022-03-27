@@ -46,7 +46,7 @@ class CrossAttention(nn.Module):
             # [B, 1, T]
             mask = mask[:, None]
         # [B, S, C]
-        style = self.prototypes
+        style = self.prototypes.repeat(inputs.shape[0], 1, 1)
         for block in self.blocks:
             # [B, S, C]
             style = block(style, inputs, inputs, mask=mask)
