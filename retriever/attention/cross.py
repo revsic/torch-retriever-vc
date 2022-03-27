@@ -18,6 +18,7 @@ class CrossAttention(nn.Module):
             blocks: the number of the attention blocks.
         """
         super().__init__()
+        self.prototypes = nn.Parameter(torch.randn(1, stylelen, channels))
         self.blocks = nn.ModuleList([
             nn.Sequential(
                 AddNorm(channels, MultiheadAttention(channels, heads)),
@@ -32,7 +33,6 @@ class CrossAttention(nn.Module):
 
     def forward(self,
                 inputs: torch.Tensor,
-                prototype: torch.Tensor,
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Generate the style tokens.
         Args:
@@ -46,7 +46,7 @@ class CrossAttention(nn.Module):
             # [B, 1, T]
             mask = mask[:, None]
         # [B, S, C]
-        style = prototype
+        style = self.prototypes
         for block in self.blocks:
             # [B, S, C]
             style = block(style, inputs, inputs, mask=mask)
