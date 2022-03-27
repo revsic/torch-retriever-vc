@@ -28,19 +28,20 @@ class AddNorm(nn.Module):
         return self.layernorm(inputs + self.sublayer(inputs, *args, **kwargs))
 
 
-class SequentialWrapper(nn.Sequential):
+class SequentialWrapper(nn.Module):
     """Sequential wrapper for multiple input sequential.
     """
-    def __init__(self, firstlayer: nn.Module, *args):
+    def __init__(self, first: nn.Module, *args):
         """Initializer.
         """
-        super().__init__(*args)
-        self.firstlayer = firstlayer
+        super().__init__()
+        self.first = first
+        self.rest = nn.Sequential(*args)
 
     def forward(self, *args, **kwargs):
         """Multiple input wrapper.
         """
-        return super().forward(self.firstlayer(*args, **kwargs))
+        return self.rest(self.first(*args, **kwargs))
 
 
 class MultiheadAttention(nn.Module):
@@ -96,7 +97,7 @@ class MultiheadAttention(nn.Module):
         out = torch.matmul(weights, value.transpose(1, 2))
         # [B, S, C]
         out = self.proj_out(out.transpose(1, 2).reshape(bsize, querylen, -1))
-        if mask is None:
+        if mask is not None:
             # [B, S, C]
             out = out * mask[..., 0:1]
         return out
