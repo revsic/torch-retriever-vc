@@ -39,7 +39,7 @@ class LinkAttention(nn.Module):
     def forward(self,
                 contents: torch.Tensor,
                 style: torch.Tensor,
-                mask: Optional[torch.Tensor] = None):
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Retrieve the content-specific styles.
         Args:
             contents: [torch.float32; [B, T, C]], content vectors.
