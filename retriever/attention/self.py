@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..transformer import AddNorm, FeedForward, MultiheadAttention
+from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWrapper
 
 
 class SelfAttention(nn.Module):
@@ -17,7 +17,7 @@ class SelfAttention(nn.Module):
         """
         super().__init__()
         self.blocks = nn.ModuleList([
-            nn.Sequential(
+            SequentialWrapper(
                 AddNorm(channels, MultiheadAttention(channels, heads)),
                 AddNorm(channels, FeedForward(channels)))
             for _ in range(blocks)])

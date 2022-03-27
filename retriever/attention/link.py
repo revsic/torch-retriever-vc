@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..transformer import AddNorm, FeedForward, MultiheadAttention
+from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWrapper
 
 
 class LinkAttention(nn.Module):
@@ -31,7 +31,7 @@ class LinkAttention(nn.Module):
         self.blocks = nn.ModuleList([
             nn.ModuleList([
                 AddNorm(channels, MultiheadAttention(channels, heads)),
-                nn.Sequential(
+                SequentialWrapper(
                     AddNorm(channels, MultiheadAttention(channels, heads)),
                     AddNorm(channels, FeedForward(channels)))])
             for _ in range(blocks)])
