@@ -27,7 +27,7 @@ class LinkAttention(nn.Module):
         # depthwise convolution
         self.conv = nn.Conv1d(
             channels, channels, kernels, padding=kernels // 2, groups=channels)
-        self.linkkey = nn.Parameter(nn.randn(1, stylelen, channels))
+        self.linkkey = nn.Parameter(torch.randn(1, stylelen, channels))
         self.blocks = nn.ModuleList([
             nn.ModuleList([
                 AddNorm(channels, MultiheadAttention(channels, heads)),
