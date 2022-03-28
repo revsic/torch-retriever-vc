@@ -9,26 +9,37 @@ from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWr
 class CrossAttention(nn.Module):
     """Cross-attention to retrieve style from input data.
     """
-    def __init__(self, channels: int, heads: int, stylelen: int, blocks: int):
+    def __init__(self,
+                 contexts: int,
+                 styles: int,
+                 heads: int,
+                 ffn: int,
+                 prototypes: int,
+                 blocks: int,
+                 dropout: float = 0.):
         """Initializer.
         Args:
-            channels: size of the input channels.
+            contexts: size of the context channels.
+            styles: size of the style channels.
             heads: the number of the attention heads.
-            stylelen: the number of the style vectors.
+            ffn: size of the FFN hidden channels.
+            prototypes: the number of the style vectors.
             blocks: the number of the attention blocks.
+            dropout: dropout rates for FFN.
         """
         super().__init__()
-        self.prototypes = nn.Parameter(torch.randn(1, stylelen, channels))
+        self.prototypes = nn.Parameter(torch.randn(1, prototypes, styles))
         self.blocks = nn.ModuleList([
             SequentialWrapper(
-                AddNorm(channels, MultiheadAttention(channels, heads)),
+                AddNorm(styles, MultiheadAttention(contexts, styles, styles, heads)),
                 AddNorm(
-                    channels,
+                    styles,
                     nn.Sequential(
-                        nn.Conv1d(stylelen, stylelen, 1),
+                        nn.Conv1d(prototypes, prototypes, 1),
                         nn.ReLU(),
-                        nn.Conv1d(stylelen, stylelen, 1))),
-                AddNorm(channels, FeedForward(channels)))
+                        nn.Dropout(dropout),
+                        nn.Conv1d(prototypes, prototypes, 1))),
+                AddNorm(styles, FeedForward(styles, ffn, dropout)))
             for _ in range(blocks)])
 
     def forward(self,
@@ -36,11 +47,10 @@ class CrossAttention(nn.Module):
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Generate the style tokens.
         Args:
-            inputs: [torch.float32; [B, T, C]], input tensor.
-            prototype: [torch.float32; [B, S, C]], prototype style tokens.
+            inputs: [torch.float32; [B, T, contexts]], input tensor.
             mask: [torch.float32; [B, T]], input mask, if provided.
         Returns:
-            [torch.float32; [B, S, C]], retrieved style tokens.
+            [torch.float32; [B, S, styles]], retrieved style tokens.
         """
         if mask is not None:
             # [B, 1, T]

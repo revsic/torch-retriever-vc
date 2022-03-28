@@ -11,29 +11,39 @@ class LinkAttention(nn.Module):
     """
     def __init__(self,
                  kernels: int,
-                 channels: int,
+                 contexts: int,
+                 styles: int,
                  heads: int,
-                 stylelen: int,
-                 blocks: int):
+                 ffn: int,
+                 prototypes: int,
+                 blocks: int,
+                 dropout: float = 0.):
         """Initializer.
         Args:
             kernels: size of the convolutional kernels.
-            channels: size of the input channels.
+            contexts: size of the input channels.
+            styles: size of the style channels.
             heads: the number of the attention heads.
-            stylelen: the number of the style vectors.
+            ffn: size of the FFN hidden channels.
+            prototypes: the number of the style vectors.
             blocks: the number of the attention blocks.
+            dropout: dropout rates for FFN.
         """
         super().__init__()
         # depthwise convolution
-        self.conv = nn.Conv1d(
-            channels, channels, kernels, padding=kernels // 2, groups=channels)
-        self.linkkey = nn.Parameter(torch.randn(1, stylelen, channels))
+        self.conv = nn.Sequential(
+            nn.Conv1d(
+                contexts, contexts, kernels, padding=kernels // 2, groups=contexts),
+            nn.ReLU())
+        self.linkkey = nn.Parameter(torch.randn(1, prototypes, styles))
         self.blocks = nn.ModuleList([
             nn.ModuleList([
-                AddNorm(channels, MultiheadAttention(channels, heads)),
+                # self attention
+                AddNorm(contexts, MultiheadAttention(contexts, contexts, contexts, heads)),
+                # link attention
                 SequentialWrapper(
-                    AddNorm(channels, MultiheadAttention(channels, heads)),
-                    AddNorm(channels, FeedForward(channels)))])
+                    AddNorm(contexts, MultiheadAttention(styles, contexts, contexts, heads)),
+                    AddNorm(contexts, FeedForward(contexts, ffn, dropout)))])
             for _ in range(blocks)])
 
     def forward(self,
@@ -42,11 +52,11 @@ class LinkAttention(nn.Module):
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Retrieve the content-specific styles.
         Args:
-            contents: [torch.float32; [B, T, C]], content vectors.
-            style: [torch.float32; [B, S, C]], style vectors.
+            contents: [torch.float32; [B, T, contexts]], content vectors.
+            style: [torch.float32; [B, S, styles]], style vectors.
             mask: [torch.float32; [B, T]], mask vector.
         Returns:
-            [torch.float32; [B, T, C]], retrieved.
+            [torch.float32; [B, T, contexts]], linked.
         """
         # [B, T, C]
         x = self.conv(contents.transpose(1, 2)).transpose(1, 2)

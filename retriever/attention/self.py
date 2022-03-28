@@ -9,17 +9,24 @@ from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWr
 class SelfAttention(nn.Module):
     """Self-attention.
     """
-    def __init__(self, channels: int, heads: int, blocks: int):
+    def __init__(self,
+                 channels: int,
+                 heads: int,
+                 ffn: int,
+                 blocks: int,
+                 dropout: float = 0.):
         """Initializer.
             channels: size of the input channels.
             heads: the number of the attention heads.
+            ffn: size of the FFN hidden channels.
             blocks: the number of the attention blocks.
+            dropout: dropout rates for FFN.
         """
         super().__init__()
         self.blocks = nn.ModuleList([
             SequentialWrapper(
-                AddNorm(channels, MultiheadAttention(channels, heads)),
-                AddNorm(channels, FeedForward(channels)))
+                AddNorm(channels, MultiheadAttention(channels, channels, channels, heads)),
+                AddNorm(channels, FeedForward(channels, ffn, dropout)))
             for _ in range(blocks)])
 
     def forward(self,
