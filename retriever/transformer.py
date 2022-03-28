@@ -47,17 +47,23 @@ class SequentialWrapper(nn.Module):
 class MultiheadAttention(nn.Module):
     """Multihead scaled dot-product attention.
     """
-    def __init__(self, channels: int, heads: int):
+    def __init__(self,
+                 contexts: int,
+                 queries: int,
+                 channels: int,
+                 heads: int):
         """Initializer.
         Args:
-            channels: size of the input channels.
+            contexts: size of the key, value channels.
+            queries: size of the query channels.
+            channels: size of the hidden channels.
             heads: the number of the attnetion heads.
         """
         super().__init__()
         self.channels, self.heads = channels // heads, heads
-        self.proj_key = nn.Linear(channels, channels)
-        self.proj_query = nn.Linear(channels, channels)
-        self.proj_value = nn.Linear(channels, channels)
+        self.proj_key = nn.Linear(contexts, channels)
+        self.proj_value = nn.Linear(contexts, channels)
+        self.proj_query = nn.Linear(queries, channels)
         self.proj_out = nn.Linear(channels, channels)
 
     def forward(self,
@@ -67,9 +73,9 @@ class MultiheadAttention(nn.Module):
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Transform the inputs.
         Args:
-            query: [torch.float32; [B, S, C]], query.
-            key: [torch.float32; [B, T, C]], key.
-            value: [torch.float32; [B, T, C]], value.
+            query: [torch.float32; [B, S, queries]], query.
+            key: [torch.float32; [B, T, contexts]], key.
+            value: [torch.float32; [B, T, contexts]], value.
             mask: [torch.float32; [B, S, T]], attention mask.
         Returns:
             [torch.float32; [B, S, C]], attended.
@@ -106,16 +112,18 @@ class MultiheadAttention(nn.Module):
 class FeedForward(nn.Sequential):
     """Feed-forward network.
     """
-    def __init__(self, channels: int, factor: int = 4):
+    def __init__(self, channels: int, hiddens: int, dropout: float = 0.):
         """Initializer.
         Args:
             channels: size of the input channels.
-            factor: upsample rates.
+            hiddens: size of the hidden channels.
+            dropout: dropout rates.
         """
         super().__init__(
-            nn.Linear(channels, channels * factor),
+            nn.Linear(channels, hiddens),
             nn.ReLU(),
-            nn.Linear(channels * factor, channels))
+            nn.Dropout(dropout),
+            nn.Linear(hiddens, channels))
 
 
 class SinusoidalPE(nn.Module):
