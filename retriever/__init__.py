@@ -105,6 +105,9 @@ class Retriever(nn.Module):
         features = self.encoder(patch, mask=mask)
         # [B, T, C], [B, G, V, T]
         contents, logits = self.quantize(features)
+        if mask is not None:
+            # [B, T, C]
+            contents = contents * mask[..., None]
         # [B, S, C]
         style = self.retriever(features, mask=mask)
         if refstyle is None:
@@ -114,7 +117,6 @@ class Retriever(nn.Module):
         synth = self.proj_out(
                 self.decoder(contents, refstyle, mask=mask)
             ).view(contents.shape[0], -1, self.mel)
-        # mask
         if mask is not None:
             # [B, T x R, mel]
             synth = synth * mask[..., None]
