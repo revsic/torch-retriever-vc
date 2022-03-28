@@ -22,8 +22,9 @@ class TrainingWrapper:
         self.config = config
         self.device = device
         # alias
-        self.seglen = self.config.train.seglen
-        self.gamma = np.log(self.config.model.vectors)
+        self.silence = np.log(config.data.eps)
+        self.seglen = config.train.seglen
+        self.gamma = np.log(config.model.vectors)
 
     def wrap(self, bunch: List[np.ndarray]) -> List[torch.Tensor]:
         """Wrap the array to torch tensor.
@@ -34,7 +35,7 @@ class TrainingWrapper:
         """
         return [torch.tensor(array, device=self.device) for array in bunch]
 
-    def random_segment(self, bunch: List[np.ndarray]) -> List[np.ndarray]:
+    def random_segment(self, bunch: List[np.ndarray]) -> np.array:
         """Segment the spectrogram and audio into fixed sized array.
         Args:
             bunch: input tensors.
@@ -51,22 +52,22 @@ class TrainingWrapper:
         seg = []
         for m, s in zip(mel, start):
             if len(m) < self.seglen:
-                m = np.pad(m, [[0, self.seglen - len(m)], [0, 0]])
+                m = np.pad(m, [[0, self.seglen - len(m)], [0, 0]],
+                           constant_values=self.silence)
             seg.append(m[s:s + self.seglen])
-        # [B, seglen, mel], [B], fixed length segment
-        return np.array(seg), np.minimum(mellen, self.seglen)
+        # [B, seglen, mel]
+        return np.array(seg)
 
-    def compute_loss(self, mel: torch.Tensor, mellen: torch.Tensor) \
+    def compute_loss(self, mel: torch.Tensor) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
         """Compute the loss.
         Args:
             mel: [torch.float32; [B, seglen, mel]], segmented spectrogram.
-            mellen: [torch.float32; [B]], segment length.
         Returns:
             loss and dictionaries.
         """
         # [B, seglen, mel], _
-        synth, aux = self.model(mel, mellen)
+        synth, aux = self.model(mel)
 
         ## 1. reconstruction
         rec = F.l1_loss(mel, synth)
