@@ -24,26 +24,45 @@ class Retriever(nn.Module):
         self.prenet = nn.Sequential(
             # patch embedding
             nn.Conv1d(
-                config.mel, config.channels,
+                config.mel, config.contexts,
                 config.reduction, stride=config.reduction),
             nn.ReLU())
 
-        self.pe = SinusoidalPE(config.channels)
+        self.pe = SinusoidalPE(config.contexts)
 
         self.encoder = SelfAttention(
-            config.channels, config.heads, config.enc_blocks)
+            config.contexts,    # key, value, query
+            config.enc_heads,
+            config.enc_ffn,
+            config.enc_blocks,
+            config.enc_dropout)
 
         self.quantize = Quantize(
-            config.channels, config.groups, config.vectors, config.temp_max)
+            config.contexts, config.groups, config.vectors, config.temp_max)
 
         self.retriever = CrossAttention(
-            config.channels, config.heads, config.styles, config.ret_blocks)
+            config.contexts,    # key, value
+            config.styles,      # query
+            config.ret_heads,
+            config.ret_ffn,
+            config.prototypes,
+            config.ret_blocks,
+            config.ret_dropout)
 
         self.decoder = LinkAttention(
-            config.dec_kernels, config.channels, config.heads,
-            config.styles, config.dec_blocks)
+            config.dec_kernels,
+            config.contexts,
+            config.styles,
+            config.dec_heads,
+            config.dec_ffn,
+            config.prototypes,
+            config.dec_blocks,
+            config.dec_dropout)
 
-        self.proj_out = nn.Linear(config.channels, config.mel * config.reduction)
+        self.proj_out = nn.Sequential(
+            nn.Linear(config.contexts, config.detok_ffn),
+            nn.ReLU(),
+            nn.Linear(config.detok_ffn, config.mel * config.reduction))
 
     def forward(self,
                 mel: torch.Tensor,
@@ -58,13 +77,15 @@ class Retriever(nn.Module):
         Returns:
             [torch.float32; [B, T, mel]], re-sytnehsized spectrogram.
         """
-        if mel.shape[1] % self.reduction > 0:
-            rest = self.reduction - mel.shape[1] % self.reduction
+        # T
+        timesteps = mel.shape[1]
+        # pad for reduction factor
+        if timesteps % self.reduction > 0:
+            rest = self.reduction - timesteps % self.reduction
             # explicit pad
             mel = F.pad(mel, [0, 0, 0, rest])
         else:
             rest = None
-
         # [B, T, C], patch embedding.
         patch = self.prenet(mel.transpose(1, 2)).transpose(1, 2)
         # [B, T, C], position informing
@@ -93,6 +114,7 @@ class Retriever(nn.Module):
         synth = self.proj_out(
                 self.decoder(contents, refstyle, mask=mask)
             ).view(contents.shape[0], -1, self.mel)
+        # unpad
         if rest is not None:
             # [B, T x R, mel]
             synth = synth[:, :-rest]
