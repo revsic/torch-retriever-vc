@@ -114,6 +114,10 @@ class Retriever(nn.Module):
         synth = self.proj_out(
                 self.decoder(contents, refstyle, mask=mask)
             ).view(contents.shape[0], -1, self.mel)
+        # mask
+        if mask is not None:
+            # [B, T x R, mel]
+            synth = synth * mask[..., None]
         # unpad
         if rest is not None:
             # [B, T x R, mel]
