@@ -26,15 +26,6 @@ class TrainingWrapper:
         self.seglen = config.train.seglen
         self.gamma = np.log(config.model.vectors)
 
-    def wrap(self, bunch: List[np.ndarray]) -> List[torch.Tensor]:
-        """Wrap the array to torch tensor.
-        Args:
-            bunch: input tensors.
-        Returns:
-            wrapped.
-        """
-        return [torch.tensor(array, device=self.device) for array in bunch]
-
     def random_segment(self, bunch: List[np.ndarray]) -> np.array:
         """Segment the spectrogram and audio into fixed sized array.
         Args:
@@ -45,7 +36,7 @@ class TrainingWrapper:
             randomly segmented spectrogram.
         """
         # [B, T, mel], [B]
-        mel, _, mellen, _ = bunch
+        _, _, mel, _, mellen = bunch
         # [B], min clipping
         start = np.random.randint(np.maximum(1, mellen - self.seglen))
         # B x [seglen, mel]
@@ -102,4 +93,4 @@ class TrainingWrapper:
         losses = {
             'loss': loss.item(),
             'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
-        return loss, losses, {'synth': synth}
+        return loss, losses, {'synth': synth.cpu().detach().numpy()}
