@@ -67,6 +67,8 @@ class LinkAttention(nn.Module):
             contents = contents * mask
             # [B, T, T]
             mask_self = mask * mask.transpose(1, 2)
+        else:
+            mask_self = None
         # [B, S, C]
         linkkey = self.linkkey.repeat(x.shape[0], 1, 1)
         for selfattn, linkattn in self.blocks:
