@@ -22,6 +22,7 @@ class TrainConfig:
         self.lambda_sc = 0.1
 
         # loader settings
+        self.split = -500
         self.batch = 120
         self.shuffle = True
         self.num_workers = 4
