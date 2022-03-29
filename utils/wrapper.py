@@ -94,3 +94,14 @@ class TrainingWrapper:
             'loss': loss.item(),
             'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
         return loss, losses, {'synth': synth.cpu().detach().numpy()}
+
+    def update_gumbel_temp(self):
+        """Update gumbol softmax temperature.
+        """
+        # update temperature
+        temp = max(
+            self.model.quantize.temp.item() * self.config.model.temp_factor,
+            self.config.model.temp_min)
+        # re-register buffer
+        self.model.quantize.register_buffer(
+            'temp', torch.tensor(temp, dtype=torch.float32, device=self.device))

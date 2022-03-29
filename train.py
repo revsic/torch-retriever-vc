@@ -89,6 +89,7 @@ class Trainer:
                     self.optim.zero_grad()
                     loss.backward()
                     self.optim.step()
+                    self.wrapper.update_gumbel_temp()
 
                     step += 1
                     pbar.update()
