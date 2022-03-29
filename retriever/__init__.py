@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from .attention import CrossAttention, LinkAttention, SelfAttention
 from .config import Config
-from .transformer import SinusoidalPE
+from .transformer import SinusoidalPE, SequentialWrapper
 from .quantize import Quantize
 
 
@@ -49,20 +49,20 @@ class Retriever(nn.Module):
             config.ret_blocks,
             config.ret_dropout)
 
-        self.decoder = LinkAttention(
-            config.dec_kernels,
-            config.contexts,
-            config.styles,
-            config.dec_heads,
-            config.dec_ffn,
-            config.prototypes,
-            config.dec_blocks,
-            config.dec_dropout)
-
-        self.proj_out = nn.Sequential(
-            nn.Linear(config.contexts, config.detok_ffn),
-            nn.ReLU(),
-            nn.Linear(config.detok_ffn, config.mel * config.reduction))
+        self.decoder = SequentialWrapper(
+            LinkAttention(
+                config.dec_kernels,
+                config.contexts,
+                config.styles,
+                config.dec_heads,
+                config.dec_ffn,
+                config.prototypes,
+                config.dec_blocks,
+                config.dec_dropout),
+            nn.Sequential(
+                nn.Linear(config.contexts, config.detok_ffn),
+                nn.ReLU(),
+                nn.Linear(config.detok_ffn, config.mel * config.reduction)))
 
     def forward(self,
                 mel: torch.Tensor,
@@ -77,7 +77,7 @@ class Retriever(nn.Module):
         Returns:
             [torch.float32; [B, T, mel]], re-sytnehsized spectrogram.
         """
-        # T
+        # T x R
         timesteps = mel.shape[1]
         # pad for reduction factor
         if timesteps % self.reduction > 0:
@@ -113,13 +113,13 @@ class Retriever(nn.Module):
         if refstyle is None:
             # [B, S, C]
             refstyle = style
-        # [B, T x R, mel]
-        synth = self.proj_out(
-                self.decoder(contents, refstyle, mask=mask)
-            ).view(contents.shape[0], -1, self.mel)
+        # [B, T, R x mel]
+        synth = self.decoder(contents, refstyle, mask=mask)
         if mask is not None:
-            # [B, T x R, mel]
+            # [B, T, R x mel]
             synth = synth * mask[..., None]
+        # [B, T x R, mel]
+        synth = synth.view(synth.shape[0], -1, self.mel)
         # unpad
         if rest is not None:
             # [B, T x R, mel]
