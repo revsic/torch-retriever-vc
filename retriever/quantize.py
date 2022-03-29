@@ -40,7 +40,7 @@ class Quantize(nn.Module):
         logits = self.proj(inputs) \
             .view(bsize, timesteps, self.groups, self.vectors) \
             .permute(0, 2, 3, 1)
-        gumbels = -torch.log(-torch.log(logits + 1e-5) + 1e-5)
+        gumbels = -torch.log(-torch.log(torch.rand_like(logits) + 1e-5) + 1e-5)
         # [B, G, V, T]
         prob = torch.softmax((logits + gumbels) / self.temp, dim=2)
         # [B, C, T]
