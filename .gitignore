@@ -1,2 +1,6 @@
 # python
 __pycache__
+
+# test purpose
+run.sh
+test.py
