@@ -63,36 +63,39 @@ class TrainingWrapper:
         ## 1. reconstruction
         rec = F.l1_loss(mel, synth)
 
-        ## 2. VQ perplexity
-        # [B, G, V, T]
-        prob = torch.softmax(aux['logits'], dim=2)
-        # [B, G, T]
-        perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=2).exp() / self.config.model.vectors
-        # []
-        perplexity = perplexity.mean()
+        # ## 2. VQ perplexity
+        # # [B, G, V, T]
+        # prob = torch.softmax(aux['logits'], dim=2)
+        # # [B, G, T]
+        # perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=2).exp() / self.config.model.vectors
+        # # []
+        # perplexity = perplexity.mean()
 
-        ## 3. Structural constraint
-        # [B, V, T], sample first group
-        groups = prob[:, 0]
-        # [B, T]
-        labels = groups.argmax(dim=1)
-        # [B, T - 1]
-        ce = F.cross_entropy(groups[..., :-1], labels[..., 1:], reduction='none') \
-            + F.cross_entropy(groups[..., 1:], labels[..., :-1], reduction='none')
-        # [B]
-        ce = ce.mean(dim=-1)
-        # [B]
-        structural = self.gamma * torch.tanh(ce / self.gamma)
-        # []
-        structural = structural.mean()
+        # ## 3. Structural constraint
+        # # [B, V, T], sample first group
+        # groups = prob[:, 0]
+        # # [B, T]
+        # labels = groups.argmax(dim=1)
+        # # [B, T - 1]
+        # ce = F.cross_entropy(groups[..., :-1], labels[..., 1:], reduction='none') \
+        #     + F.cross_entropy(groups[..., 1:], labels[..., :-1], reduction='none')
+        # # [B]
+        # ce = ce.mean(dim=-1)
+        # # [B]
+        # structural = self.gamma * torch.tanh(ce / self.gamma)
+        # # []
+        # structural = structural.mean()
 
-        # []
-        loss = self.config.train.lambda_rec * rec + \
-            self.config.train.lambda_vq * perplexity + \
-            self.config.train.lambda_sc * structural
+        # # []
+        # loss = self.config.train.lambda_rec * rec + \
+        #     self.config.train.lambda_vq * perplexity + \
+        #     self.config.train.lambda_sc * structural
+        # losses = {
+        #     'loss': loss.item(),
+        #     'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
+        loss = rec
         losses = {
-            'loss': loss.item(),
-            'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
+            'loss': loss.item()}
         return loss, losses, {'synth': synth.cpu().detach().numpy()}
 
     def update_gumbel_temp(self):

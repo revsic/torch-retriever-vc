@@ -104,7 +104,8 @@ class Retriever(nn.Module):
         # [B, T, C]
         features = self.encoder(patch, mask=mask)
         # [B, T, C], [B, G, V, T]
-        contents, logits = self.quantize(features)
+        # contents, logits = self.quantize(features)
+        contents, logits = features, None
         if mask is not None:
             # [B, T, C]
             contents = contents * mask[..., None]
