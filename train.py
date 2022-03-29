@@ -119,7 +119,7 @@ class Trainer:
                             'train/synth', self.mel_img(aux['synth'][Trainer.LOG_IDX]), step)
 
             cumul = {key: [] for key in losses}
-            with torch.inference_mode():
+            with torch.no_grad():
                 for bunch in self.testloader:
                     mel = torch.tensor(
                         self.wrapper.random_segment(bunch), device=self.device)
