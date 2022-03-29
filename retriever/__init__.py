@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -128,3 +128,24 @@ class Retriever(nn.Module):
             'contents': contents,
             'style': style,
             'logits': logits}
+
+    def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
+        """Save the models.
+        Args:
+            path: path to the checkpoint.
+            optim: optimizer, if provided.
+        """
+        dump = {'model': self.state_dict()}
+        if optim is not None:
+            dump['optim'] = optim.state_dict()
+        torch.save(dump, path)
+
+    def load(self, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
+        """Load from checkpoints.
+        Args:
+            states: state dict.
+            optim: optimizer, if provided.
+        """
+        self.load_state_dict(states['model'])
+        if optim is not None:
+            optim.load_state_dict(states['optim'])
