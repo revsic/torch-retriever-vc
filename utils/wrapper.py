@@ -95,7 +95,8 @@ class TrainingWrapper:
         #     'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
         loss = rec
         losses = {
-            'loss': loss.item()}
+            'loss': loss.item(),
+            'rec': rec.item()}
         return loss, losses, {'synth': synth.cpu().detach().numpy()}
 
     def update_gumbel_temp(self):
