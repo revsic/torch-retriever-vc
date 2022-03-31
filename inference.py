@@ -1,7 +1,10 @@
 import argparse
 import json
+import os
 
 import librosa
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 
 from config import Config
@@ -35,7 +38,8 @@ hifigan = HiFiGANWrapper(args.hifi_config, args.hifi_ckpt, device)
 libritts = DumpedLibriTTS(args.data_dir)
 testset = libritts.split(config.train.split)
 
-sid, text, mel, textlen, mellen = testset[:2]
+start = 2
+sid, text, mel, textlen, mellen = testset[start:start + 2]
 # wrap
 mel, mellen = torch.tensor(mel, device=device), torch.tensor(mellen, device=device)
 
@@ -49,7 +53,31 @@ with torch.no_grad():
     out = hifigan.forward(torch.cat([synth, mixed], dim=0))
     out = out.cpu().numpy()
 
+    # [B, G, V, T]
+    indices = torch.zeros_like(aux['logits']).scatter(
+        2, aux['logits'].argmax(dim=2, keepdim=True), 1.).cpu().numpy()
+
+os.makedirs('./synth', exist_ok=True)
 for i, (wav, mlen) in enumerate(zip(out, mellen.repeat(2))):
     # unwrap
     librosa.output.write_wav(
-        f'{i}.wav', wav[:mlen.item() * config.data.hop], sr=config.data.sr)
+        f'./synth/{i}.wav', wav[:mlen.item() * config.data.hop], sr=config.data.sr)
+
+cmap = np.array(plt.get_cmap('viridis').colors)
+# B x ([G, V, T], [T x R, mel])
+for i, (idx, mel) in enumerate(zip(indices, synth.cpu().numpy())):
+    rest = mel.shape[0] % config.model.reduction
+    if rest > 0:
+        mel = np.pad(mel, [[0, config.model.reduction - rest], [0, 0]], constant_values=np.log(config.data.eps))
+    # [T, mel]
+    mel = mel.reshape(-1, config.model.reduction, config.data.mel).mean(axis=1)
+    # [T, mel]
+    mel = (mel - mel.min()) / (mel.max() - mel.min() + 1e-7)
+    # [mel, T]
+    mel = np.flip(mel.transpose(1, 0), axis=0)
+    # G x [V, T]
+    for j, imap in enumerate(idx):
+        # [mel + V, T]
+        img = np.concatenate([mel, imap], axis=0)
+        # [mel + V, T, 3]
+        plt.imsave(f'./synth/{i}_{j}.png', cmap[(img * 255).astype(np.uint8)])
