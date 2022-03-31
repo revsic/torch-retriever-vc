@@ -1,8 +1,8 @@
 diff --git models.py models.py
-index da233d0..3d9ccf5 100644
+index da233d0..5f8948c 100644
 --- models.py
 +++ models.py
-@@ -3,11 +3,23 @@ import torch.nn.functional as F
+@@ -3,11 +3,21 @@ import torch.nn.functional as F
  import torch.nn as nn
  from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
  from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
@@ -18,10 +18,8 @@ index da233d0..3d9ccf5 100644
 +        m.weight.data.normal_(mean, std)
 +
 +
-+def apply_weight_norm(m):
-+    classname = m.__class__.__name__
-+    if classname.find("Conv") != -1:
-+        weight_norm(m)
++def get_padding(kernel_size, dilation=1):
++    return int((kernel_size*dilation - dilation)/2)
 +
 +
  class ResBlock1(torch.nn.Module):
