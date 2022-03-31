@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -117,7 +118,7 @@ class Retriever(nn.Module):
         synth = self.decoder(contents, refstyle, mask=mask)
         if mask is not None:
             # [B, T, R x mel]
-            synth = synth * mask[..., None]
+            synth.masked_fill_(~mask[..., None].to(torch.bool), np.log(1e-5))
         # [B, T x R, mel]
         synth = synth.view(synth.shape[0], -1, self.mel)
         # unpad

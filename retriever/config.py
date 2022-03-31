@@ -17,8 +17,7 @@ class Config:
         self.prototypes = 60   # the number of the prototypes
 
         # encoder
-        self.enc_blocks = 4
-        self.enc_ffn = 2048    # contexts x 4 
+        self.enc_ffn = 2048    # contexts x 4
         self.enc_heads = 8
         self.enc_blocks = 4
         self.enc_dropout = 0.1
@@ -31,7 +30,7 @@ class Config:
 
         # decoder
         self.dec_kernels = 31
-        self.dec_ffn = 2048    # contexts x 4 
+        self.dec_ffn = 2048    # contexts x 4
         self.dec_heads = 8
         self.dec_blocks = 4
         self.dec_dropout = 0.1
