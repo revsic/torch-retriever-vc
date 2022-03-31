@@ -44,4 +44,4 @@ class HiFiGANWrapper:
         Returns:
             [torch.float32; [B, T x hop]], generated wav signal, in range [-1, 1]
         """
-        return self.model(mel.transpose(1, 2))
+        return self.model(mel.transpose(1, 2)).squeeze(dim=1)
