@@ -64,16 +64,16 @@ class TrainingWrapper:
         rec = F.l1_loss(mel, synth)
 
         ## 2. VQ perplexity
-        # [B, G, V, T]
-        prob = torch.softmax(aux['logits'], dim=2)
-        # [B, G, T]
-        perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=2).exp() / self.config.model.vectors
+        # [G, V], mean across batch
+        prob = torch.softmax(aux['logits'], dim=2).mean(dim=[0, 3])
+        # [G]
+        perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=1).exp() / self.config.model.vectors
         # []
         perplexity = perplexity.mean()
 
         ## 3. Structural constraint
         # [B, V, T], sample first group
-        groups = prob[:, 0]
+        groups = aux['logits'][:, 0]
         # [B, T]
         labels = groups.argmax(dim=1)
         # [B, T - 1]
