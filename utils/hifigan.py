@@ -1,7 +1,9 @@
 import sys
-# ./utils/hifigan.py
-sys.path.append(f'{__file__}/../../hifi-gan')
-# hifigan generator
+import os
+# __file__ == ./utils/hifigan.py
+HIFI_PATH = os.path.join(os.path.dirname(__file__), '..', 'hifi-gan')
+sys.path.append(HIFI_PATH)
+
 from env import AttrDict
 from models import Generator
 sys.path.pop()
