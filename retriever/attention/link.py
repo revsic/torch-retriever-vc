@@ -63,10 +63,10 @@ class LinkAttention(nn.Module):
         if mask is not None:
             # [B, T, 1]
             mask = mask[..., None]
-            # [B, T, C]
-            contents = contents * mask
             # [B, T, T]
             mask_self = mask * mask.transpose(1, 2)
+            # [B, T, C]
+            x = x * mask
         else:
             mask_self = None
         # [B, S, C]
