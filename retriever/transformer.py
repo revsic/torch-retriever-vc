@@ -153,6 +153,11 @@ class SinusoidalPE(nn.Module):
         # [steps, pe]
         return self.buffer[:steps]
 
+    def _load_from_state_dict(self, *args, **kwargs):
+        """Do not load any state_dict.
+        """
+        pass
+
     @staticmethod
     def compute(steps: int, pe: int, device: Optional[torch.device] = None) -> torch.Tensor:
         """Generate sinusoidal embedding introduced by Vaswani et al., 2017.
