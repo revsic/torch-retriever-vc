@@ -98,14 +98,16 @@ class TrainingWrapper:
         for i, linear in enumerate(self.model.cpc_proj):
             k = i + 1
             # [B, T - k, T - k]
-            ratio = torch.matmul(linear(cpcpred[:, :-k]), contents[..., k:]).exp()
+            logit = torch.matmul(linear(cpcpred[:, :-k]), contents[..., k:])
+            # for numerical stability
+            ratio = torch.exp(logit - logit.max())
             # T - k
             timesteps = ratio.shape[1]
             # [T - k, T - k]
             pos_mask = torch.eye(timesteps, device=ratio.device)
-            # [B, T - k]
+            # [B, T - k], do not add logit.max() since it is canceled by log_pos - log_neg
             log_pos = torch.log((ratio * pos_mask[None]).sum(dim=-1) + 1e-7)
-            
+
             # [T - k]
             neg_mask = torch.zeros(timesteps, device=ratio.device).scatter(
                 0, torch.randperm(timesteps, device=ratio.device)[:self.cpc_neg], 1.)
