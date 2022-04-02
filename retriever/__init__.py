@@ -41,6 +41,13 @@ class Retriever(nn.Module):
         self.quantize = Quantize(
             config.contexts, config.groups, config.vectors, config.temp_max)
 
+        self.cpcpred = nn.GRU(
+            config.contexts, config.contexts,
+            num_layers=config.cpc_layers, batch_first=True)
+        self.cpc_proj = nn.ModuleList([
+            nn.Linear(config.contexts, config.contexts)
+            for _ in range(config.cpc_steps)])
+
         self.retriever = CrossAttention(
             config.contexts,    # key, value
             config.styles,      # query
@@ -126,6 +133,7 @@ class Retriever(nn.Module):
             # [B, T x R, mel]
             synth = synth[:, :-rest]
         return synth, {
+            'features': features,
             'contents': contents,
             'style': style,
             'logits': logits}
