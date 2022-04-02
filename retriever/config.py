@@ -17,10 +17,8 @@ class Config:
         self.prototypes = 60   # the number of the prototypes
 
         # encoder
-        self.enc_ffn = 2048    # contexts x 4
-        self.enc_heads = 8
+        self.enc_kernels = 3
         self.enc_blocks = 4
-        self.enc_dropout = 0.1
 
         # style retriever
         self.ret_ffn = 512     # queries x 4 / 3

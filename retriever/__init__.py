@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import CrossAttention, LinkAttention, SelfAttention
+from .attention import CrossAttention, LinkAttention
 from .config import Config
 from .transformer import SinusoidalPE, SequentialWrapper
 from .quantize import Quantize
@@ -31,12 +31,11 @@ class Retriever(nn.Module):
 
         self.pe = SinusoidalPE(config.contexts)
 
-        self.encoder = SelfAttention(
-            config.contexts,    # key, value, query
-            config.enc_heads,
-            config.enc_ffn,
-            config.enc_blocks,
-            config.enc_dropout)
+        self.encoder = nn.Sequential(*[
+            nn.Conv1d(
+                config.contexts, config.contexts,
+                config.enc_kernels, padding=config.enc_kernels // 2)
+            for _ in range(config.enc_blocks)])
 
         self.quantize = Quantize(
             config.contexts, config.groups, config.vectors, config.temp_max)
@@ -110,7 +109,10 @@ class Retriever(nn.Module):
         else:
             mask = None
         # [B, T, C]
-        features = self.encoder(patch, mask=mask)
+        features = self.encoder(patch.transpose(1, 2)).transpose(1, 2)
+        if mask is not None:
+            # [B, T, C]
+            features = features * mask[..., None]
         # [B, T, C], [B, G, V, T]
         contents, logits = self.quantize(features)
         if mask is not None:
