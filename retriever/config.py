@@ -44,3 +44,8 @@ class Config:
         self.temp_max = 2
         self.temp_min = 0.01
         self.temp_factor = 0.9996
+
+        # contrastive predictive coding
+        self.cpc_layers = 2
+        self.cpc_steps = 12
+        self.cpc_neg = 8

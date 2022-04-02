@@ -24,7 +24,9 @@ class TrainingWrapper:
         # alias
         self.silence = np.log(config.data.eps)
         self.seglen = config.train.seglen
+        self.vectors = config.model.vectors
         self.gamma = np.log(config.model.vectors)
+        self.cpc_neg = config.model.cpc_neg
 
     def random_segment(self, bunch: List[np.ndarray]) -> np.array:
         """Segment the spectrogram and audio into fixed sized array.
@@ -67,7 +69,7 @@ class TrainingWrapper:
         # [G, V], mean across batch
         prob = torch.softmax(aux['logits'], dim=2).mean(dim=[0, 3])
         # [G]
-        perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=1).exp() / self.config.model.vectors
+        perplexity = (prob * torch.log(prob + 1e-5)).sum(dim=1).exp() / self.vectors
         # []
         perplexity = perplexity.mean()
 
@@ -86,13 +88,43 @@ class TrainingWrapper:
         # []
         structural = structural.mean()
 
+        ## 4. CPC
+        # [B, C, T]
+        contents = aux['contents'].transpose(1, 2)
+        # [B, T, C]
+        cpcpred, _ = self.model.cpcpred(aux['features'])
+        # K x []
+        infonce = 0.
+        for i, linear in enumerate(self.model.cpc_proj):
+            k = i + 1
+            # [B, T - k, T - k]
+            ratio = torch.matmul(linear(cpcpred[:, :-k]), contents[..., k:]).exp()
+            # T - k
+            timesteps = ratio.shape[1]
+            # [T - k, T - k]
+            pos_mask = torch.eye(timesteps, device=ratio.device)
+            # [B, T - k]
+            log_pos = torch.log((ratio * pos_mask[None]).sum(dim=-1) + 1e-7)
+            
+            # [T - k]
+            neg_mask = torch.zeros(timesteps, device=ratio.device).scatter(
+                0, torch.randperm(timesteps, device=ratio.device)[:self.cpc_neg], 1.)
+            # [T - k, T - k], remove diagonal, exclusive
+            neg_mask = neg_mask[None].repeat(timesteps, 1) * (1 - pos_mask)
+            # [B, T - k]
+            log_neg = torch.log((ratio * neg_mask[None]).sum(dim=-1) + 1e-7)
+
+            # []
+            infonce = infonce - torch.mean(log_pos - log_neg)
+
         # []
         loss = self.config.train.lambda_rec * rec + \
             self.config.train.lambda_vq * perplexity + \
-            self.config.train.lambda_sc * structural
+            self.config.train.lambda_sc * (structural + infonce)
         losses = {
             'loss': loss.item(),
-            'rec': rec.item(), 'vq': perplexity.item(), 'sc': structural.item()}
+            'rec': rec.item(), 'vq': perplexity.item(),
+            'sc': structural.item(), 'cpc': infonce.item()}
         return loss, losses, {'synth': synth.cpu().detach().numpy()}
 
     def update_gumbel_temp(self):
