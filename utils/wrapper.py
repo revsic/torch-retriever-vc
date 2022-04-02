@@ -118,6 +118,8 @@ class TrainingWrapper:
 
             # []
             infonce = infonce - torch.mean(log_pos - log_neg)
+        # mean
+        infonce = infonce / len(self.model.cpc_proj)
 
         # []
         loss = self.config.train.lambda_rec * rec + \
