@@ -78,8 +78,8 @@ class TrainingWrapper:
         def randmask(size: int, samples: int, device: torch.device) -> torch.Tensor:
             return torch.zeros(size, device=device).scatter(
                 0, torch.randperm(size, device=device)[:samples], 1.)
-        # T
-        timesteps = aux['features'].shape[1]
+        # B, T, _
+        bsize, timesteps, _ = aux['features'].shape
         # [T]
         mask = randmask(timesteps, self.pos, aux['features'].device)
         # [B, T, C]
@@ -91,7 +91,8 @@ class TrainingWrapper:
             F.normalize(pred, dim=-1),
             F.normalize(aux['contents'], dim=-1).transpose(1, 2))
         # for numerical stability
-        ratio = torch.exp(logit - logit.max())
+        # , since range of cossim is [-1, 1], logit.max() == 1.
+        ratio = torch.exp(logit - 1.)
 
         # [T, T]
         pos_mask = mask[:, None] * mask[None]
@@ -102,7 +103,21 @@ class TrainingWrapper:
         neg_mask = randmask(
             timesteps, self.neg, ratio.device)[None].repeat(timesteps, 1) * (1 - pos_mask)
         # [B, T]
-        log_neg = torch.log((ratio * neg_mask[None]).sum(dim=-1) + 1e-7)
+        neg = (ratio * neg_mask[None]).sum(dim=-1)
+
+        
+        # [], range [1, B - 1]
+        start = np.random.randint(bsize - 1) + 1
+        # [B], for shuffling
+        indices = (np.arange(bsize) + start) % bsize
+        # [B, T, T], cross-batch cossim
+        cross_logit = torch.matmul(
+            F.normalize(pred, dim=-1),
+            F.normalize(aux['contents'][indices], dim=-1).transpose(1, 2))
+        # for numerical stability
+        cross_ratio = torch.exp(cross_logit - 1.)
+        # [B, T]
+        log_neg = torch.log(neg + (cross_ratio * neg_mask[None]).sum(dim=-1) + 1e-7)
 
         # []
         infonce = -(log_pos - log_neg).mean()
