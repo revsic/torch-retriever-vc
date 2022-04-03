@@ -26,7 +26,8 @@ class TrainingWrapper:
         self.seglen = config.train.seglen
         self.vectors = config.model.vectors
         self.gamma = np.log(config.model.vectors)
-        self.cpc_neg = config.model.cpc_neg
+        self.pos = config.model.cpc_pos
+        self.neg = config.model.cpc_neg
 
     def random_segment(self, bunch: List[np.ndarray]) -> np.array:
         """Segment the spectrogram and audio into fixed sized array.
@@ -88,38 +89,38 @@ class TrainingWrapper:
         # []
         structural = structural.mean()
 
-        ## 4. CPC
-        # [B, C, T]
-        contents = aux['contents'].transpose(1, 2)
+        ## 4. Masked lm
+        def randmask(size: int, samples: int, device: torch.device) -> torch.Tensor:
+            return torch.zeros(size, device=device).scatter(
+                0, torch.randperm(size, device=device)[:samples], 1.)
+        # T
+        timesteps = aux['features'].shape[1]
+        # [T]
+        mask = randmask(timesteps, self.pos, aux['features'].device)
         # [B, T, C]
-        cpcpred, _ = self.model.cpcpred(aux['features'])
-        # K x []
-        infonce = 0.
-        for i, linear in enumerate(self.model.cpc_proj):
-            k = i + 1
-            # [B, T - k, T - k]
-            logit = torch.matmul(linear(cpcpred[:, :-k]), contents[..., k:])
-            # for numerical stability
-            ratio = torch.exp(logit - logit.max())
-            # T - k
-            timesteps = ratio.shape[1]
-            # [T - k, T - k]
-            pos_mask = torch.eye(timesteps, device=ratio.device)
-            # [B, T - k], do not add logit.max() since it is canceled by log_pos - log_neg
-            log_pos = torch.log((ratio * pos_mask[None]).sum(dim=-1) + 1e-7)
+        pred = self.model.cpcpred(
+            self.model.maskembed + (
+                aux['features'] - self.model.maskembed) * mask[None, :, None])
+        # [B, T, T], cosine similarity
+        logit = torch.matmul(
+            F.normalize(pred, dim=-1),
+            F.normalize(aux['contents'], dim=-1).transpose(1, 2))
+        # for numerical stability
+        ratio = torch.exp(logit - logit.max())
 
-            # [T - k]
-            neg_mask = torch.zeros(timesteps, device=ratio.device).scatter(
-                0, torch.randperm(timesteps, device=ratio.device)[:self.cpc_neg], 1.)
-            # [T - k, T - k], remove diagonal, exclusive
-            neg_mask = neg_mask[None].repeat(timesteps, 1) * (1 - pos_mask)
-            # [B, T - k]
-            log_neg = torch.log((ratio * neg_mask[None]).sum(dim=-1) + 1e-7)
+        # [T, T]
+        pos_mask = mask[:, None] * mask[None]
+        # [B, T]
+        log_pos = torch.log((ratio * pos_mask[None]).sum(dim=-1) + 1e-7)
+        
+        # [T, T]
+        neg_mask = randmask(
+            timesteps, self.neg, ratio.device)[None].repeat(timesteps, 1) * (1 - pos_mask)
+        # [B, T]
+        log_neg = torch.log((ratio * neg_mask[None]).sum(dim=-1) + 1e-7)
 
-            # []
-            infonce = infonce - torch.mean(log_pos - log_neg)
-        # mean
-        infonce = infonce / len(self.model.cpc_proj)
+        # []
+        infonce = -(log_pos - log_neg).mean()
 
         # []
         loss = self.config.train.lambda_rec * rec + \

@@ -20,6 +20,15 @@ class Config:
         self.enc_kernels = 3
         self.enc_blocks = 4
 
+        # masked language model
+        self.lm_ffn = 2048
+        self.lm_heads = 8
+        self.lm_blocks = 4
+        self.lm_dropout = 0.1
+        # cpc
+        self.cpc_pos = 32
+        self.cpc_neg = 64
+
         # style retriever
         self.ret_ffn = 512     # queries x 4 / 3
         self.ret_heads = 4
@@ -42,8 +51,3 @@ class Config:
         self.temp_max = 2
         self.temp_min = 0.01
         self.temp_factor = 0.9996
-
-        # contrastive predictive coding
-        self.cpc_layers = 2
-        self.cpc_steps = 12
-        self.cpc_neg = 8

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import CrossAttention, LinkAttention
+from .attention import CrossAttention, LinkAttention, SelfAttention
 from .config import Config
 from .transformer import SinusoidalPE, SequentialWrapper
 from .quantize import Quantize
@@ -40,12 +40,14 @@ class Retriever(nn.Module):
         self.quantize = Quantize(
             config.contexts, config.groups, config.vectors, config.temp_max)
 
-        self.cpcpred = nn.GRU(
-            config.contexts, config.contexts,
-            num_layers=config.cpc_layers, batch_first=True)
-        self.cpc_proj = nn.ModuleList([
-            nn.Linear(config.contexts, config.contexts)
-            for _ in range(config.cpc_steps)])
+        self.cpcpred = SelfAttention(
+            config.contexts,
+            config.lm_heads,
+            config.lm_ffn,
+            config.lm_blocks,
+            config.lm_dropout)
+        
+        self.maskembed = nn.Parameter(torch.randn(config.contexts))
 
         self.retriever = CrossAttention(
             config.contexts,    # key, value
