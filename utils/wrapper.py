@@ -74,22 +74,7 @@ class TrainingWrapper:
         # []
         perplexity = perplexity.mean()
 
-        ## 3. Structural constraint
-        # [B, V, T], sample first group
-        groups = aux['logits'][:, 0]
-        # [B, T]
-        labels = groups.argmax(dim=1)
-        # [B, T - 1]
-        ce = F.cross_entropy(groups[..., :-1], labels[..., 1:], reduction='none') \
-            + F.cross_entropy(groups[..., 1:], labels[..., :-1], reduction='none')
-        # [B]
-        ce = ce.mean(dim=-1)
-        # [B]
-        structural = self.gamma * torch.tanh(ce / self.gamma)
-        # []
-        structural = structural.mean()
-
-        ## 4. Masked lm
+        ## 3. Masked lm
         def randmask(size: int, samples: int, device: torch.device) -> torch.Tensor:
             return torch.zeros(size, device=device).scatter(
                 0, torch.randperm(size, device=device)[:samples], 1.)
@@ -125,11 +110,10 @@ class TrainingWrapper:
         # []
         loss = self.config.train.lambda_rec * rec + \
             self.config.train.lambda_vq * perplexity + \
-            self.config.train.lambda_sc * (structural + infonce)
+            self.config.train.lambda_sc * infonce
         losses = {
             'loss': loss.item(),
-            'rec': rec.item(), 'vq': perplexity.item(),
-            'sc': structural.item(), 'cpc': infonce.item()}
+            'rec': rec.item(), 'vq': perplexity.item(), 'cpc': infonce.item()}
         return loss, losses, {'synth': synth.cpu().detach().numpy()}
 
     def update_gumbel_temp(self):
