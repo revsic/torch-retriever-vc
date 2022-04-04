@@ -26,8 +26,7 @@ class TrainingWrapper:
         self.seglen = config.train.seglen
         self.vectors = config.model.vectors
         self.gamma = np.log(config.model.vectors)
-        self.pos = config.model.cpc_pos
-        self.neg = config.model.cpc_neg
+        self.sample = config.model.cpc_sample
 
     def random_segment(self, bunch: List[np.ndarray]) -> np.array:
         """Segment the spectrogram and audio into fixed sized array.
@@ -75,13 +74,11 @@ class TrainingWrapper:
         perplexity = perplexity.mean()
 
         ## 3. Masked lm
-        def randmask(size: int, samples: int, device: torch.device) -> torch.Tensor:
-            return torch.zeros(size, device=device).scatter(
-                0, torch.randperm(size, device=device)[:samples], 1.)
         # B, T, _
         bsize, timesteps, _ = aux['features'].shape
         # [T]
-        mask = randmask(timesteps, self.pos, aux['features'].device)
+        mask = torch.zeros(timesteps, device=self.device).scatter(
+            0, torch.randperm(timesteps, device=self.device)[:self.sample], 1.)
         # [B, T, C]
         pred = self.model.cpcpred(
             aux['features'] + (
@@ -90,18 +87,16 @@ class TrainingWrapper:
         logit = torch.matmul(
             F.normalize(pred, dim=-1),
             F.normalize(aux['contents'], dim=-1).transpose(1, 2))
-        # for numerical stability
-        # , since range of cossim is [-1, 1], logit.max() == 1.
+        # for numerical stability, torch.exp(logit - logit.max())
         ratio = torch.exp(logit - 1.)
 
         # [T, T]
-        pos_mask = mask[:, None] * mask[None]
+        pos_mask = torch.eye(timesteps, device=self.device) * mask
         # [B, T]
         log_pos = torch.log((ratio * pos_mask[None]).sum(dim=-1) + 1e-7)
-        
-        # [T, T]
-        neg_mask = randmask(
-            timesteps, self.neg, ratio.device)[None].repeat(timesteps, 1) * (1 - pos_mask)
+
+        # [T, T], exclusive candidates
+        neg_mask = mask[None] * mask[:, None] * (1 - pos_mask)
         # [B, T]
         neg = (ratio * neg_mask[None]).sum(dim=-1)
 

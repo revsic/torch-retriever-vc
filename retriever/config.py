@@ -26,8 +26,7 @@ class Config:
         self.lm_blocks = 4
         self.lm_dropout = 0.1
         # cpc
-        self.cpc_pos = 32
-        self.cpc_neg = 64
+        self.cpc_sample = 64
 
         # style retriever
         self.ret_ffn = 512     # queries x 4 / 3
