@@ -99,8 +99,8 @@ class TrainingWrapper:
         mask = randmask(timesteps, self.pos, aux['features'].device)
         # [B, T, C]
         pred = self.model.cpcpred(
-            self.model.maskembed + (
-                aux['features'] - self.model.maskembed) * mask[None, :, None])
+            aux['features'] + (
+                self.model.maskembed - aux['features']) * mask[None, :, None])
         # [B, T, T], cosine similarity
         logit = torch.matmul(
             F.normalize(pred, dim=-1),
