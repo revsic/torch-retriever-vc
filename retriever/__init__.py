@@ -11,6 +11,19 @@ from .transformer import SinusoidalPE, SequentialWrapper
 from .quantize import Quantize
 
 
+class AddBN(nn.BatchNorm1d):
+    """Normalize and add.
+    """
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """Normalize and add.
+        Args:
+            inputs: [torch.float32; [B, C, T]], input tensor.
+        Returns:
+            [torch.float32; [B, C, T]], normalized and added.
+        """
+        return inputs + super().forward(inputs)
+
+
 class Retriever(nn.Module):
     """Retreiver for voice conversion.
     """
@@ -36,7 +49,8 @@ class Retriever(nn.Module):
                 nn.Conv1d(
                     config.contexts, config.contexts,
                     config.enc_kernels, padding=config.enc_kernels // 2),
-                nn.ReLU())
+                nn.ReLU(),
+                AddBN(config.contexts))
             for _ in range(config.enc_blocks)])
 
         self.quantize = Quantize(
