@@ -32,9 +32,11 @@ class Retriever(nn.Module):
         self.pe = SinusoidalPE(config.contexts)
 
         self.encoder = nn.Sequential(*[
-            nn.Conv1d(
-                config.contexts, config.contexts,
-                config.enc_kernels, padding=config.enc_kernels // 2)
+            nn.Sequential(
+                nn.Conv1d(
+                    config.contexts, config.contexts,
+                    config.enc_kernels, padding=config.enc_kernels // 2),
+                nn.ReLU())
             for _ in range(config.enc_blocks)])
 
         self.quantize = Quantize(
