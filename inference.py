@@ -42,7 +42,7 @@ if args.data_dir is not None:
     libritts = DumpedLibriTTS(args.data_dir)
     testset = libritts.split(config.train.split)
 
-    START = 2
+    START = 400
     sid, text, mel, textlen, mellen = testset[START:START + 2]
 else:
     def mel_fn(path: str, stft: MelSTFT = MelSTFT(config.data)) -> np.ndarray:
@@ -55,6 +55,9 @@ else:
 
 # wrap
 mel, mellen = torch.tensor(mel, device=device), torch.tensor(mellen, device=device)
+# clip
+MAX_MELLEN = 240
+mel, mellen = mel[:, :MAX_MELLEN], torch.clamp_max(mellen, MAX_MELLEN)
 
 with torch.no_grad():
     synth, aux = retriever(mel, mellen)
