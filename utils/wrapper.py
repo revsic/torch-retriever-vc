@@ -80,9 +80,11 @@ class TrainingWrapper:
         mask = torch.zeros(timesteps, device=self.device).scatter(
             0, torch.randperm(timesteps, device=self.device)[:self.sample], 1.)
         # [B, T, C]
+        masked = aux['features'] + (
+            self.model.maskembed - aux['features']) * mask[None, :, None]
+        # [B, T, C]
         pred = self.model.cpcpred(
-            aux['features'] + (
-                self.model.maskembed - aux['features']) * mask[None, :, None])
+            self.model.cpcconv(masked.transpose(1, 2)).transpose(1, 2))
         # [B, T, T], cosine similarity
         logit = torch.matmul(
             F.normalize(pred, dim=-1),
