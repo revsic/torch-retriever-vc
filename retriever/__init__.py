@@ -56,7 +56,7 @@ class Retriever(nn.Module):
 
         self.cpcpred = nn.Sequential(
             nn.Conv1d(
-                config.contexts, config.contexts, kernels=config.lm_kernels,
+                config.contexts, config.contexts, config.lm_kernels,
                 padding=config.lm_kernels // 2, groups=config.contexts),
             SelfAttention(
                 config.contexts,
