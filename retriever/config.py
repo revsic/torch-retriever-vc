@@ -19,6 +19,7 @@ class Config:
         self.prototypes = 60   # the number of the prototypes
 
         # masked language model
+        self.lm_kernels = 31
         self.lm_ffn = 2048
         self.lm_heads = 8
         self.lm_blocks = 4
