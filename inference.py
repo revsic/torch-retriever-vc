@@ -11,6 +11,7 @@ from config import Config
 from retriever import Retriever
 from utils.hifigan import HiFiGANWrapper
 from utils.libritts import DumpedLibriTTS
+from speechset.utils.melstft import MelSTFT
 
 
 parser = argparse.ArgumentParser()
@@ -19,6 +20,8 @@ parser.add_argument('--ret-ckpt')
 parser.add_argument('--hifi-config')
 parser.add_argument('--hifi-ckpt')
 parser.add_argument('--data-dir')
+parser.add_argument('--audio1')
+parser.add_argument('--audio2')
 args = parser.parse_args()
 
 
@@ -35,11 +38,21 @@ retriever.eval()
 
 hifigan = HiFiGANWrapper(args.hifi_config, args.hifi_ckpt, device)
 
-libritts = DumpedLibriTTS(args.data_dir)
-testset = libritts.split(config.train.split)
+if args.data_dir is not None:
+    libritts = DumpedLibriTTS(args.data_dir)
+    testset = libritts.split(config.train.split)
 
-start = 2
-sid, text, mel, textlen, mellen = testset[start:start + 2]
+    START = 2
+    sid, text, mel, textlen, mellen = testset[START:START + 2]
+else:
+    def mel_fn(path: str, stft: MelSTFT = MelSTFT(config.data)) -> np.ndarray:
+        wav, _ = librosa.load(path)
+        return stft(wav)
+    # pack
+    mel = [mel_fn(path) for path in [args.audio1, args.audio2]]
+    mellen = np.array([m.shape[0] for m in mel], dtype=np.int64)
+    mel = np.stack([np.pad(m, [[0, mellen.max() - m.shape[0]], [0, 0]]) for m in mel])
+
 # wrap
 mel, mellen = torch.tensor(mel, device=device), torch.tensor(mellen, device=device)
 
