@@ -49,7 +49,7 @@ class Retriever(nn.Module):
                         config.pre_kernels, padding=config.pre_kernels // 2),
                     nn.ReLU(),
                     AddBN(config.contexts))
-                for _ in range(config.enc_blocks)]))
+                for _ in range(config.pre_blocks)]))
 
         self.quantize = Quantize(
             config.contexts, config.groups, config.vectors, config.temp_max)
