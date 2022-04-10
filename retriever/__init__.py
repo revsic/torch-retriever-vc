@@ -40,18 +40,16 @@ class Retriever(nn.Module):
             nn.Conv1d(
                 config.mel, config.contexts,
                 config.reduction, stride=config.reduction),
-            nn.ReLU())
-
-        self.pe = SinusoidalPE(config.contexts)
-
-        self.encoder = nn.Sequential(*[
-            nn.Sequential(
-                nn.Conv1d(
-                    config.contexts, config.contexts,
-                    config.enc_kernels, padding=config.enc_kernels // 2),
-                nn.ReLU(),
-                AddBN(config.contexts))
-            for _ in range(config.enc_blocks)])
+            nn.ReLU(),
+            # feature encoder
+            nn.Sequential(*[
+                nn.Sequential(
+                    nn.Conv1d(
+                        config.contexts, config.contexts,
+                        config.pre_kernels, padding=config.pre_kernels // 2),
+                    nn.ReLU(),
+                    AddBN(config.contexts))
+                for _ in range(config.enc_blocks)]))
 
         self.quantize = Quantize(
             config.contexts, config.groups, config.vectors, config.temp_max)
@@ -113,8 +111,6 @@ class Retriever(nn.Module):
             rest = None
         # [B, T, C], patch embedding.
         patch = self.prenet(mel.transpose(1, 2)).transpose(1, 2)
-        # [B, T, C], position informing
-        patch = patch + self.pe(patch.shape[1])
         if mellen is not None:
             # reduce the lengths
             mellen = torch.ceil(mellen / self.reduction).long()
@@ -126,18 +122,13 @@ class Retriever(nn.Module):
             patch = patch * mask[..., None]
         else:
             mask = None
-        # [B, T, C]
-        features = self.encoder(patch.transpose(1, 2)).transpose(1, 2)
-        if mask is not None:
-            # [B, T, C]
-            features = features * mask[..., None]
         # [B, T, C], [B, G, V, T]
-        contents, logits = self.quantize(features)
+        contents, logits = self.quantize(patch)
         if mask is not None:
             # [B, T, C]
             contents = contents * mask[..., None]
         # [B, S, C]
-        style = self.retriever(features, mask=mask)
+        style = self.retriever(patch, mask=mask)
         if refstyle is None:
             # [B, S, C]
             refstyle = style
@@ -153,7 +144,7 @@ class Retriever(nn.Module):
             # [B, T x R, mel]
             synth = synth[:, :-rest]
         return synth, {
-            'features': features,
+            'features': patch,
             'contents': contents,
             'style': style,
             'logits': logits}

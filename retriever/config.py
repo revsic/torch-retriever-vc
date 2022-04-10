@@ -10,15 +10,13 @@ class Config:
 
         # prenet
         self.reduction = 2
+        self.pre_kernels = 3
+        self.pre_blocks = 6
 
         # channels
         self.contexts = 512    # context channels
         self.styles = 192      # style channels
         self.prototypes = 60   # the number of the prototypes
-
-        # encoder
-        self.enc_kernels = 3
-        self.enc_blocks = 4
 
         # masked language model
         self.lm_ffn = 2048
