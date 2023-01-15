@@ -136,7 +136,10 @@ class SinusoidalPE(nn.Module):
             steps: initial size.
         """
         super().__init__()
-        self.register_buffer('buffer', SinusoidalPE.compute(steps, pe))
+        self.register_buffer(
+            'buffer',
+            SinusoidalPE.compute(steps, pe),
+            persistent=False)
 
     def forward(self, steps: int) -> torch.Tensor:
         """Return the cached positional encodings..
@@ -149,14 +152,11 @@ class SinusoidalPE(nn.Module):
         maxsteps, pe = self.buffer.shape
         if steps > maxsteps:
             self.register_buffer(
-                'buffer', SinusoidalPE.compute(steps, pe, device=self.buffer.device))
+                'buffer',
+                SinusoidalPE.compute(steps, pe, device=self.buffer.device),
+                persistent=False)
         # [steps, pe]
         return self.buffer[:steps]
-
-    def _load_from_state_dict(self, *args, **kwargs):
-        """Do not load any state_dict.
-        """
-        pass
 
     @staticmethod
     def compute(steps: int, pe: int, device: Optional[torch.device] = None) -> torch.Tensor:
