@@ -28,7 +28,7 @@ class AddNorm(nn.Module):
         return self.layernorm(inputs + self.sublayer(inputs, *args, **kwargs))
 
 
-class SequentialWrapper(nn.Module):
+class AuxSequential(nn.Module):
     """Sequential wrapper for multiple input sequential.
     """
     def __init__(self, first: nn.Module, *args):
