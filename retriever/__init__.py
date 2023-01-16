@@ -5,9 +5,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import CrossAttention, LinkAttention, SelfAttention
+from .attention import CrossAttention
 from .config import Config
-from .transformer import SequentialWrapper
+from .decoder import Decoder
+from .linguistic import LinguisticEncoder
+from .wav2vec2 import Wav2Vec2Wrapper
 
 
 class Retriever(nn.Module):
@@ -20,28 +22,41 @@ class Retriever(nn.Module):
         """
         super().__init__()
         self.config = config
+        self.wav2vec2 = Wav2Vec2Wrapper(
+            config.w2v2_name,
+            config.sr)
+
+        # LinguisticEncoder
+        self.linguistic = LinguisticEncoder(
+            self.wav2vec2.channels,
+            config.ling_kernels,
+            config.ling_hiddens,
+            config.ling_heads,
+            config.ling_ffn,
+            config.ling_blocks,
+            config.ling_dropout)
+
         self.retriever = CrossAttention(
-            config.contexts,    # key, value
-            config.styles,      # query
+            self.wav2vec2.channels,
+            config.styles,
             config.ret_heads,
             config.ret_ffn,
             config.prototypes,
             config.ret_blocks,
             config.ret_dropout)
 
-        self.decoder = SequentialWrapper(
-            LinkAttention(
-                config.contexts,
-                config.styles,
-                config.dec_heads,
-                config.dec_ffn,
-                config.prototypes,
-                config.dec_blocks,
-                config.dec_dropout),
-            nn.Sequential(
-                nn.Linear(config.contexts, config.detok_ffn),
-                nn.ReLU(),
-                nn.Linear(config.detok_ffn, config.mel * config.reduction)))
+        self.decoder = Decoder(
+            config.ling_hiddens,
+            _,
+            config.dec_kernels,
+            config.contexts,
+            config.styles,
+            config.dec_heads,
+            config.dec_ffn,
+            config.prototypes,
+            config.dec_blocks,
+            config.dec_detok,
+            config.dec_dropout)
 
     def forward(self,
                 mel: torch.Tensor,

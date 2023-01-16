@@ -26,6 +26,4 @@ class Config:
         self.dec_heads = 8
         self.dec_blocks = 4
         self.dec_dropout = 0.1
-
-        # detokenizer
-        self.detok_ffn = 2048  # 4096
+        self.dec_detok = 2048  # 4096
