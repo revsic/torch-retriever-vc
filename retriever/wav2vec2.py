@@ -12,17 +12,19 @@ class Wav2Vec2Wrapper(nn.Module):
     DEFAULT = 'facebook/wav2vec2-large-xlsr-53'
     # Since 0-th hidden state is poosition-informed convolution features
     # , one-base indexing required
+    SPEAKER = 1
     LINGUISTIC = 12
 
     def __init__(self,
                  name: Optional[str] = None,
                  sr: int = 16000,
+                 speaker: Optional[int] = None,
                  linguistic: Optional[int] = None):
         """Load the wav2vec2.0 pretrained model.
         Args:
             name: name of the model, default use facebook XLSR-53.
             sr: sample rates of the input audio, default 16khz for XLSR-53.
-            linguistic: layer outputs for linguistic features. 
+            speaker, linguistic: layer outputs for speaker, linguistic features. 
         """
         super().__init__()
         name = name or Wav2Vec2Wrapper.DEFAULT
@@ -31,6 +33,7 @@ class Wav2Vec2Wrapper(nn.Module):
         self.model = Wav2Vec2Model.from_pretrained(name)
         # alias
         self.channels = self.model.config.output_hidden_size
+        self.speaker = speaker or Wav2Vec2Wrapper.SPEAKER
         self.linguistic = linguistic or Wav2Vec2Wrapper.LINGUISTIC
         # feature extractor
         ext = Wav2Vec2FeatureExtractor.from_pretrained(name)
@@ -43,14 +46,15 @@ class Wav2Vec2Wrapper(nn.Module):
     @torch.no_grad()
     def forward(self,
                 audio: torch.Tensor,
-                audiolen: Optional[torch.Tensor] = None) -> torch.Tensor:
+                audiolen: Optional[torch.Tensor] = None) \
+            -> Tuple[torch.Tensor, torch.Tensor]:
         """Extract the features from audio.
         Args:
             audio: [torch.float32; [B, T']], audio, [-1, 1]-ranged.
             audiolen: [torch.long; [B]], length of the audios,
                 masking the inputs if provided.
         Returns:
-            linguistic: [torch.float32; [B, S, C]], linguistic encodings,
+            speaker, linguistic: [torch.float32; [B, S, C]], linguistic encodings,
                 where S = T // 320, T = ceil(T' / `sr` x 16000)
         """
         # [B, T]
@@ -80,8 +84,9 @@ class Wav2Vec2Wrapper(nn.Module):
             attention_mask=mask.to(torch.long),
             output_hidden_states=True)
         # [B, S, C(=1024)]
+        speaker = output.hidden_states[self.speaker]
         linguistic = output.hidden_states[self.linguistic]
-        return linguistic
+        return speaker, linguistic
 
     def train(self, mode: bool = True):
         """Support only evaluation
