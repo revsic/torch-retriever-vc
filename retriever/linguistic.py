@@ -38,7 +38,7 @@ class LinguisticEncoder(nn.Module):
 
         self.encoder = AuxSequential(
             SelfAttention(hiddens, heads, ffn, blocks, dropout),
-            nn.Conv1d(hiddens, hiddens, 1))
+            nn.Linear(hiddens, hiddens))
 
     def forward(self, inputs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """Extract the linguistic informations.
