@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWrapper
+from .transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
 
 
 class LinkAttention(nn.Module):
@@ -34,7 +34,7 @@ class LinkAttention(nn.Module):
                 # self attention
                 AddNorm(contexts, MultiheadAttention(contexts, contexts, contexts, heads)),
                 # link attention
-                SequentialWrapper(
+                AuxSequential(
                     AddNorm(contexts, MultiheadAttention(styles, contexts, contexts, heads)),
                     AddNorm(contexts, FeedForward(contexts, ffn, dropout)))])
             for _ in range(blocks)])
@@ -46,7 +46,7 @@ class LinkAttention(nn.Module):
         """Retrieve the content-specific styles.
         Args:
             contents: [torch.float32; [B, T, contexts]], content vectors.
-            style: [torch.float32; [B, S, styles]], style vectors.
+            style: [torch.float32; [B, prototypes, styles]], style vectors.
             mask: [torch.float32; [B, T]], mask vector.
         Returns:
             [torch.float32; [B, T, contexts]], linked.

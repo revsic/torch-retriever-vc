@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWrapper
+from .transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
 
 
 class SelfAttention(nn.Module):
@@ -24,7 +24,7 @@ class SelfAttention(nn.Module):
         """
         super().__init__()
         self.blocks = nn.ModuleList([
-            SequentialWrapper(
+            AuxSequential(
                 AddNorm(channels, MultiheadAttention(channels, channels, channels, heads)),
                 AddNorm(channels, FeedForward(channels, ffn, dropout)))
             for _ in range(blocks)])
@@ -34,12 +34,12 @@ class SelfAttention(nn.Module):
                 mask: Optional[torch.tensor] = None) -> torch.Tensor:
         """Transform the inputs.
         Args:
-            inputs: [torch.float32; [B, T, C]], input tensor.
+            inputs: [torch.float32; [B, T, channels]], input tensor.
             mask: [torch.float32; [B, T]], sequence mask.
         Returns:
-            [torch.float32; [B, T, C]], transformed.
+            [torch.float32; [B, T, channels]], transformed.
         """
-        # [B, T, C]
+        # [B, T, C(=channels)]
         x = inputs
         if mask is not None:
             # [B, T, T]

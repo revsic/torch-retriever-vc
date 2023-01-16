@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..transformer import AddNorm, FeedForward, MultiheadAttention, SequentialWrapper
+from .transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
 
 
 class CrossAttention(nn.Module):
@@ -30,7 +30,7 @@ class CrossAttention(nn.Module):
         super().__init__()
         self.prototypes = nn.Parameter(torch.randn(1, prototypes, styles))
         self.blocks = nn.ModuleList([
-            SequentialWrapper(
+            AuxSequential(
                 AddNorm(styles, MultiheadAttention(contexts, styles, styles, heads)),
                 AddNorm(
                     styles,
