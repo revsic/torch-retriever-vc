@@ -31,17 +31,17 @@ class AddNorm(nn.Module):
 class AuxSequential(nn.Module):
     """Sequential wrapper for multiple input sequential.
     """
-    def __init__(self, first: nn.Module, *args):
+    def __init__(self, *args):
         """Initializer.
         """
         super().__init__()
-        self.first = first
-        self.rest = nn.Sequential(*args)
+        self.fst, *rst = args
+        self.rst = nn.Sequential(*rst)
 
     def forward(self, *args, **kwargs):
         """Multiple input wrapper.
         """
-        return self.rest(self.first(*args, **kwargs))
+        return self.rst(self.fst(*args, **kwargs))
 
 
 class MultiheadAttention(nn.Module):
