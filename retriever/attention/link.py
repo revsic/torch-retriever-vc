@@ -61,23 +61,19 @@ class LinkAttention(nn.Module):
         # [B, T, C]
         x = self.conv(contents.transpose(1, 2)).transpose(1, 2)
         if mask is not None:
-            # [B, T, 1]
-            mask = mask[..., None]
-            # [B, T, T]
-            mask_self = mask * mask.transpose(1, 2)
             # [B, T, C]
-            x = x * mask
-        else:
-            mask_self = None
+            x = x * mask[..., None]
+            # [B, T, T]
+            mask = mask[:, None] * mask[..., None]
         # [B, S, C]
         linkkey = self.linkkey.repeat(x.shape[0], 1, 1)
         for selfattn, linkattn in self.blocks:
             # [B, T, C]
-            x = selfattn(x, x, x, mask=mask_self)
+            x = selfattn(x, x, x, mask=mask)
             # [B, T, C]
-            x = linkattn(x, linkkey, style, mask=mask)
-            if mask is not None:
-                # [B, T, C], masking for FFN.
-                x = x * mask
+            x = linkattn(x, linkkey, style, mask=mask[..., :1])
+        if mask is not None:
+            # [B, T, C], masking for FFN.
+            x = x * mask[..., :1]
         # [B, T, C]
         return x

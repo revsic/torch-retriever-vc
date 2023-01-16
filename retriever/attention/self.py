@@ -47,8 +47,8 @@ class SelfAttention(nn.Module):
         for block in self.blocks:
             # [B, T, C]
             x = block(x, x, x, mask=mask)
-            if mask is not None:
-                # [B, T, C]
-                x = x * mask[..., 0:1]
+        if mask is not None:
+            # [B, T, C]
+            x = x * mask[..., :1]
         # [B, T, C]
         return x

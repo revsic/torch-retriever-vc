@@ -50,7 +50,7 @@ class CrossAttention(nn.Module):
             inputs: [torch.float32; [B, T, contexts]], input tensor.
             mask: [torch.float32; [B, T]], input mask, if provided.
         Returns:
-            [torch.float32; [B, S, styles]], retrieved style tokens.
+            [torch.float32; [B, prototypes, styles]], retrieved style tokens.
         """
         if mask is not None:
             # [B, 1, T]
