@@ -7,21 +7,7 @@ import torch.nn.functional as F
 
 from .attention import CrossAttention, LinkAttention, SelfAttention
 from .config import Config
-from .transformer import SinusoidalPE, SequentialWrapper
-from .quantize import Quantize
-
-
-class AddBN(nn.BatchNorm1d):
-    """Normalize and add.
-    """
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        """Normalize and add.
-        Args:
-            inputs: [torch.float32; [B, C, T]], input tensor.
-        Returns:
-            [torch.float32; [B, C, T]], normalized and added.
-        """
-        return inputs + super().forward(inputs)
+from .transformer import SequentialWrapper
 
 
 class Retriever(nn.Module):
@@ -33,39 +19,7 @@ class Retriever(nn.Module):
             config: model configurations.
         """
         super().__init__()
-        self.mel = config.mel
-        self.reduction = config.reduction
-        self.prenet = nn.Sequential(
-            # patch embedding
-            nn.Conv1d(
-                config.mel, config.contexts,
-                config.reduction, stride=config.reduction),
-            nn.ReLU(),
-            # feature encoder
-            nn.Sequential(*[
-                nn.Sequential(
-                    nn.Conv1d(
-                        config.contexts, config.contexts,
-                        config.pre_kernels, padding=config.pre_kernels // 2),
-                    nn.ReLU(),
-                    AddBN(config.contexts))
-                for _ in range(config.pre_blocks)]))
-
-        self.quantize = Quantize(
-            config.contexts, config.groups, config.vectors, config.temp_max)
-
-        self.cpcconv = nn.Conv1d(
-            config.contexts, config.contexts, config.lm_kernels,
-            padding=config.lm_kernels // 2, groups=config.contexts)
-        self.cpcpred = SelfAttention(
-            config.contexts,
-            config.lm_heads,
-            config.lm_ffn,
-            config.lm_blocks,
-            config.lm_dropout)
-
-        self.maskembed = nn.Parameter(torch.randn(config.contexts))
-
+        self.config = config
         self.retriever = CrossAttention(
             config.contexts,    # key, value
             config.styles,      # query
@@ -77,7 +31,6 @@ class Retriever(nn.Module):
 
         self.decoder = SequentialWrapper(
             LinkAttention(
-                config.dec_kernels,
                 config.contexts,
                 config.styles,
                 config.dec_heads,
@@ -158,13 +111,13 @@ class Retriever(nn.Module):
             path: path to the checkpoint.
             optim: optimizer, if provided.
         """
-        dump = {'model': self.state_dict()}
+        dump = {'model': self.state_dict(), 'config': vars(self.config)}
         if optim is not None:
             dump['optim'] = optim.state_dict()
         torch.save(dump, path)
 
-    def load(self, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
-        """Load from checkpoints.
+    def load_(self, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
+        """Load from checkpoints inplace.
         Args:
             states: state dict.
             optim: optimizer, if provided.
@@ -172,3 +125,22 @@ class Retriever(nn.Module):
         self.load_state_dict(states['model'])
         if optim is not None:
             optim.load_state_dict(states['optim'])
+
+    @classmethod
+    def load(cls, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
+        """Load from checkpoints.
+        Args:
+            states: state dict.
+            optim: optimizer, if provided.
+        """
+        config = Config()
+        for key, val in states['config'].items():
+            if not hasattr(config, key):
+                import warnings
+                warnings.warn(f'unidentified key {key}')
+                continue
+            setattr(config, key, val)
+        # construct
+        retv = cls(config)
+        retv.load_(states, optim)
+        return retv
