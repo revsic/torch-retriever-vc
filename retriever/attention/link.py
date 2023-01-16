@@ -10,7 +10,6 @@ class LinkAttention(nn.Module):
     """Link attention to retrieve content-specific style for reconstruction.
     """
     def __init__(self,
-                 kernels: int,
                  contexts: int,
                  styles: int,
                  heads: int,
@@ -20,7 +19,6 @@ class LinkAttention(nn.Module):
                  dropout: float = 0.):
         """Initializer.
         Args:
-            kernels: size of the convolutional kernels.
             contexts: size of the input channels.
             styles: size of the style channels.
             heads: the number of the attention heads.
@@ -30,11 +28,6 @@ class LinkAttention(nn.Module):
             dropout: dropout rates for FFN.
         """
         super().__init__()
-        # depthwise convolution
-        self.conv = nn.Sequential(
-            nn.Conv1d(
-                contexts, contexts, kernels, padding=kernels // 2, groups=contexts),
-            nn.ReLU())
         self.linkkey = nn.Parameter(torch.randn(1, prototypes, styles))
         self.blocks = nn.ModuleList([
             nn.ModuleList([
@@ -58,11 +51,8 @@ class LinkAttention(nn.Module):
         Returns:
             [torch.float32; [B, T, contexts]], linked.
         """
-        # [B, T, C]
-        x = self.conv(contents.transpose(1, 2)).transpose(1, 2)
+        x = contents
         if mask is not None:
-            # [B, T, C]
-            x = x * mask[..., None]
             # [B, T, T]
             mask = mask[:, None] * mask[..., None]
         # [B, S, C]
