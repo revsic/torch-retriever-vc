@@ -6,6 +6,12 @@ class Config:
         self.contexts = 512    # context channels
         self.styles = 192      # style channels
         self.prototypes = 60   # the number of the prototypes
+        self.encodecs = 1024
+
+        # time embeddings
+        self.pe = 128
+        self.timesteps = 8
+        self.embeds = 512
 
         # linguistic
         self.ling_kernels = 31
@@ -22,8 +28,15 @@ class Config:
         self.ret_dropout = 0.1
 
         # decoder
-        self.dec_ffn = 2048
-        self.dec_heads = 8
-        self.dec_blocks = 4
-        self.dec_dropout = 0.1
-        self.dec_detok = 2048  # 4096
+        self.fst_heads = 4
+        self.fst_ffn = 2048
+        self.fst_blocks = 8
+        self.fst_dropout = 0.1
+
+        self.rst_kernels = 31
+        self.rst_heads = 4
+        self.rst_ffn = 2048
+        self.rst_blocks = 8
+        self.rst_dropout = 0.1
+
+        self.kappa = 0.1
