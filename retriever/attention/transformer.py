@@ -80,32 +80,32 @@ class MultiheadAttention(nn.Module):
         Returns:
             [torch.float32; [B, S, C]], attended.
         """
-        # B, S
-        bsize, querylen, _ = query.shape
-        # T
-        keylen = key.shape[1]
+        # S, T
+        querylen, keylen = query.shape[1], key.shape[1]
         # [B, T, H, C // H]
         key = self.proj_key(key).view(
-            bsize, keylen, self.heads, self.channels)
+            -1, keylen, self.heads, self.channels)
         value = self.proj_value(value).view(
-            bsize, keylen, self.heads, self.channels)
+            -1, keylen, self.heads, self.channels)
         # [B, S, H, C // H]
         query = self.proj_query(query).view(
-            bsize, querylen, self.heads, self.channels)
+            -1, querylen, self.heads, self.channels)
         # [B, H, S, T]
         score = torch.matmul(
             query.permute(0, 2, 1, 3),
             key.permute(0, 2, 3, 1)) * (self.channels ** -0.5)
         if mask is not None:
-            score.masked_fill_(~mask[:, None, 0:1].to(torch.bool), -np.inf)
+            score.masked_fill_(~mask[:, None, :1].to(torch.bool), -np.inf)
         weights = torch.softmax(score, dim=-1)
         # [B, H, S, C // H]
         out = torch.matmul(weights, value.transpose(1, 2))
+        # B
+        bsize, *_ = out.shape
         # [B, S, C]
         out = self.proj_out(out.transpose(1, 2).reshape(bsize, querylen, -1))
         if mask is not None:
             # [B, S, C]
-            out = out * mask[..., 0:1]
+            out = out * mask[..., :1]
         return out
 
 
