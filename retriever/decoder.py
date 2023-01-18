@@ -1,74 +1,159 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from .attention import AuxSequential, LinkAttention
+from .attention.transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
+
+
+class MultiLink(nn.Module):
+    """Attention with multiple kinds.
+    """
+    def __init__(self,
+                 channels: int,
+                 contexts: int,
+                 styles: int,
+                 heads: int,
+                 prototypes: int):
+        """Initializer.
+        Args:
+            channels: size of the input channels.
+            contexts: size of the context channels.
+            styles: size of the style channels.
+            heads: size of the FFN hidden channels.
+            prototypes: the number of the style vectors.
+        """
+        super().__init__()
+        self.linkkey = nn.Parameter(torch.randn(1, prototypes, styles))
+        self.link_style = MultiheadAttention(
+            styles, channels, channels // 2, heads // 2)
+        self.link_context = MultiheadAttention(
+            contexts, channels, channels // 2, heads // 2)
+        self.proj = nn.Linear(channels, channels, bias=False)
+
+    def forward(self,
+                x: torch.Tensor,
+                style: torch.Tensor,
+                context: torch.Tensor,
+                mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Link the information.
+        Args:
+            x: [torch.float32; [B, T, channels]], input query.
+            style: [torch.float32; [B, prototypes, styles]], style vector.
+            context: [torch.float32; [B, S, contexts]], context vector.
+            mask: [torch.float32; [B, T, S]], attention mask.
+        Returns:
+            [torch.float32; [B, T, channels]], attended.
+        """
+        # [B, T, channels // 2]
+        x_a = self.link_style.forward(x, self.linkkey, style)
+        x_b = self.link_context.forward(x, context, context, mask=mask)
+        # [B, T, channels]
+        x = self.proj(torch.cat([x_a, x_b], dim=-1))
+        if mask is not None:
+            x = x[..., :1]
+        return x
 
 
 class Decoder(nn.Module):
-    """Linguistic encoder.
+    """Link attention to retrieve content-specific style for reconstruction.
     """
     def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
+                 channels: int,
                  kernels: int,
                  contexts: int,
                  styles: int,
+                 embeds: int,
                  heads: int,
                  ffn: int,
                  prototypes: int,
                  blocks: int,
-                 detok: int,
+                 tokens: int,
+                 kappa: float,
                  dropout: float = 0.):
         """Initializer.
         Args:
-            in_channels, out_channels: size of the input, output channels.
-            kernels: size of the convolutional kernels.
+            channels: size of the input channels.
+            kernels: size of the convolutional kernels, alternatives of PE.
             contexts: size of the context channels.
             styles: size of the style channels.
+            embeds: size of the embedding channels.
             heads: the number of the attention heads.
             ffn: size of the FFN hidden channels.
             prototypes: the number of the style vectors.
             blocks: the number of the attention blocks.
-            detok: detokenizer FFN hidden channels.
+            tokens: the number of the output tokens.
+            kappa: temperature for softmax.
             dropout: dropout rates for FFN.
         """
         super().__init__()
+        self.mapper = nn.Linear(embeds, channels * blocks)
+        # instead of positional encoding
         self.preconv = nn.Sequential(
-            nn.Conv1d(in_channels, contexts, 1),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            # instead of positional encoding
             nn.Conv1d(
                 contexts, contexts, kernels,
                 padding=kernels // 2, groups=contexts, bias=False),
             nn.ReLU())
-
-        self.encoder = AuxSequential(
-            LinkAttention(
-                contexts,
-                styles,
-                heads,
-                ffn,
-                prototypes,
-                blocks,
-                dropout),
-            nn.Linear(contexts, detok),
-            nn.ReLU(),
-            nn.Linear(detok, out_channels))
+        # attentions
+        self.blocks = nn.ModuleList([
+            nn.ModuleList([
+                # self attention
+                AddNorm(
+                    channels,
+                    MultiheadAttention(channels, channels, channels, heads)),
+                # multiple links
+                AuxSequential(
+                    AddNorm(
+                        channels,
+                        MultiLink(channels, contexts, styles, heads, prototypes)),
+                    AddNorm(channels, FeedForward(channels, ffn, dropout)))])
+            for _ in range(blocks)])
+        # classification head
+        self.proj = nn.Linear(channels, channels)
+        self.tokens = nn.Parameter(torch.randn(1, channels, tokens))
+        # alias
+        self.kappa = kappa
 
     def forward(self,
-                inputs: torch.Tensor,
-                styles: torch.Tensor,
-                mask: torch.Tensor) -> torch.Tensor:
-        """Extract the linguistic informations.
+                x: torch.Tensor,
+                contents: torch.Tensor,
+                style: torch.Tensor,
+                embed: torch.Tensor,
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Retrieve the content-specific styles.
         Args:
-            inputs: [torch.float32; [B, S, channels]], input tensors.
-            styles: [torch.float32; [B, prototypes, styles]], style vectors.
-            mask: [torch.float32; [B, S]], sequential mask.
+            x: [torch.float32; [B, T, channels]], input vectors.
+            contents: [torch.float32; [B, S, contexts]], content vectors.
+            style: [torch.float32; [B, prototypes, styles]], style vectors.
+            embed: [torch.float32; [B, embed]], time embeddings.
+            mask: [torch.float32; [B, T, S]], mask vector.
         Returns:
-            [torch.float32; [B, S, hiddens]], extracted.
+            [torch.float32; [B, T, channels]], linked.
         """
-        # [B, hiddens, S]
-        x = self.preconv(inputs.transpose(1, 2))
-        # [B, S, hiddens]
-        return self.encoder(x.transpose(1, 2), styles, mask)
+        mask_s = None
+        if mask is not None:
+            # [B, T]
+            mask_s = mask[..., 0]
+            # [B, T, T]
+            mask_s = mask_s[:, None] * mask_s[..., None]
+        # blocks x [B, channels]
+        embeds = self.mapper(embed).chunk(len(self.blocks))
+        for (selfattn, linkattn), embed in zip(self.blocks, embeds):
+            # [B, T, C], add time-embeddings
+            x = x + embed[:, None]
+            # [B, T, C]
+            x = selfattn(x, x, x, mask=mask_s)
+            # [B, T, C]
+            x = linkattn(x, style, contents, mask=mask)
+        # [B, T, tokens]
+        x = torch.matmul(
+            F.normalize(self.proj(x), p=2, dim=-1),
+            F.normalize(self.tokens, p=2, dim=1))
+        # temperize
+        x = x / self.kappa
+        if mask is not None:
+            # [B, T, C], masking for FFN.
+            x = x * mask[..., :1]
+        # [B, T, C]
+        return x
