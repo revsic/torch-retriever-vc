@@ -1,5 +1,3 @@
-import math
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -7,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
+from tqdm import tqdm
 
 
 def phase_vocoder(stft: torch.Tensor, rate: torch.Tensor, hop: int):
@@ -86,7 +85,7 @@ class PitchShift(nn.Module):
         # resampling kernels
         self.resamples = nn.ModuleDict({
             s.item(): torchaudio.transforms.Resample(orig_freq.item(), sr)
-            for s, orig_freq in zip(steps.long(), (sr / rate).long())})
+            for s, orig_freq in zip(tqdm(steps.long(), desc='resampler'), (sr / rate).long())})
         # alias
         self.fft, self.hop, self.win = fft, hop, win
         if window is None:
