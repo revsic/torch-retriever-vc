@@ -9,9 +9,10 @@ import torch
 import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
+import speechset
 from config import Config
 from retriever import Retriever
-from utils.libritts import DumpedLibriTTS
+from utils.dataset import RealtimeWavDataset, WeightedRandomWrapper
 from utils.wrapper import TrainingWrapper
 
 
@@ -22,35 +23,36 @@ class Trainer:
 
     def __init__(self,
                  model: Retriever,
-                 dataset: DumpedLibriTTS,
+                 dataset: RealtimeWavDataset,
+                 testset: RealtimeWavDataset,
                  config: Config,
                  device: torch.device):
         """Initializer.
         Args:
             model: retriever model.
-            dataset: dataset.
+            dataset, testset: dataset.
             config: unified configurations.
             device: target computing device.
         """
         self.model = model
         self.dataset = dataset
+        self.testset = testset
         self.config = config
-        self.device = device
-        # train-test split
-        self.testset = self.dataset.split(config.train.split)
+        # for disabling auto-collation
+        def identity(x): return x
 
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=config.train.batch,
             shuffle=config.train.shuffle,
-            collate_fn=self.dataset.collate,
+            collate_fn=identity,
             num_workers=config.train.num_workers,
             pin_memory=config.train.pin_memory)
 
         self.testloader = torch.utils.data.DataLoader(
             self.testset,
             batch_size=config.train.batch,
-            collate_fn=self.dataset.collate,
+            collate_fn=identity,
             num_workers=config.train.num_workers,
             pin_memory=config.train.pin_memory)
 
@@ -82,14 +84,12 @@ class Trainer:
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    mel = torch.tensor(
-                        self.wrapper.random_segment(bunch), device=self.device)
-                    loss, losses, aux = self.wrapper.compute_loss(mel)
+                    _, seg = self.wrapper.random_segment(self.dataset.collate(bunch))
+                    loss, losses = self.wrapper.compute_loss(seg)
                     # update
                     self.optim.zero_grad()
                     loss.backward()
                     self.optim.step()
-                    self.wrapper.update_gumbel_temp()
 
                     step += 1
                     pbar.update()
@@ -111,40 +111,41 @@ class Trainer:
                     self.train_log.add_scalar(
                         'common/learning-rate', self.optim.param_groups[0]['lr'], step)
 
-                    if (it + 1) % (len(self.loader) // 50) == 0:
-                        mel = mel[Trainer.LOG_IDX].cpu().numpy()
-                        self.train_log.add_image(
-                            # [3, M, T]
-                            'train/gt', self.mel_img(mel), step)
-                        self.train_log.add_image(
-                            'train/synth', self.mel_img(aux['synth'][Trainer.LOG_IDX]), step)
+                    # if (it + 1) % (len(self.loader) // 50) == 0:
+                    #     mel = mel[Trainer.LOG_IDX].cpu().numpy()
+                    #     self.train_log.add_image(
+                    #         # [3, M, T]
+                    #         'train/gt', self.mel_img(mel), step)
+                    #     self.train_log.add_image(
+                    #         'train/synth', self.mel_img(aux['synth'][Trainer.LOG_IDX]), step)
+                    break
 
             cumul = {key: [] for key in losses}
             with torch.no_grad():
                 for bunch in self.testloader:
-                    mel = torch.tensor(
-                        self.wrapper.random_segment(bunch), device=self.device)
-                    _, losses, _ = self.wrapper.compute_loss(mel)
+                    _, seg = self.wrapper.random_segment(self.testset.collate(bunch))
+                    _, losses = self.wrapper.compute_loss(seg)
                     for key, val in losses.items():
                         cumul[key].append(val)
+                    break
                 # test log
                 for key, val in cumul.items():
                     self.test_log.add_scalar(f'loss/{key}', np.mean(val), step)
 
-                # wrap last bunch
-                _, _, mel, _, mellen = bunch
-                # [T, M], gt plot
-                mel = mel[Trainer.LOG_IDX, :mellen[Trainer.LOG_IDX]]
-                self.test_log.add_image('test/gt', self.mel_img(mel), step)
+                # # wrap last bunch
+                # _, _, mel, _, mellen = bunch
+                # # [T, M], gt plot
+                # mel = mel[Trainer.LOG_IDX, :mellen[Trainer.LOG_IDX]]
+                # self.test_log.add_image('test/gt', self.mel_img(mel), step)
 
-                # inference
-                self.model.eval()
-                # [1, T, M]
-                synth, _ = self.model(torch.tensor(mel[None], device=device))
-                self.model.train()
-                # [T, M]
-                synth = synth.squeeze(0).cpu().detach().numpy()
-                self.test_log.add_image('test/synth', self.mel_img(synth), step)
+                # # inference
+                # self.model.eval()
+                # # [1, T, M]
+                # synth, _ = self.model(torch.tensor(mel[None], device=device))
+                # self.model.train()
+                # # [T, M]
+                # synth = synth.squeeze(0).cpu().detach().numpy()
+                # self.test_log.add_image('test/synth', self.mel_img(synth), step)
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
 
@@ -172,7 +173,6 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--config', default=None)
     parser.add_argument('--load-epoch', default=0, type=int)
-    parser.add_argument('--data-dir', default=None)
     parser.add_argument('--name', default=None)
     parser.add_argument('--auto-rename', default=False, action='store_true')
     args = parser.parse_args()
@@ -204,16 +204,26 @@ if __name__ == '__main__':
     if not os.path.exists(ckpt_path):
         os.makedirs(ckpt_path)
 
-    # prepare datasets
-    libritts = DumpedLibriTTS(args.data_dir)
-
-    # model definition
     device = torch.device(
         'cuda:0' if torch.cuda.is_available() else 'cpu')
+    # prepare datasets
+    sr = config.model.sr
+    dataset = RealtimeWavDataset(
+        speechset.datasets.ConcatReader([
+            speechset.datasets.VCTK('/data1/audio/vctk/VCTK-Corpus', sr),
+            speechset.datasets.LibriTTS('/data1/audio/libritts/LibriTTS/train-clean-360', sr)]),
+        device=device)
+    dataset = WeightedRandomWrapper(dataset, subepoch=1)
+
+    testset = RealtimeWavDataset(
+        speechset.datasets.LibriSpeech('/data1/audio/librispeech/LibriSpeech/test-clean', sr),
+        device=device)
+
+    # model definition
     model = Retriever(config.model)
     model.to(device)
 
-    trainer = Trainer(model, libritts, config, device)
+    trainer = Trainer(model, dataset, testset, config, device)
 
     # loading
     if args.load_epoch > 0:
