@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention.transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
+from .attention.transformer import \
+    AddNorm, AuxSequential, FeedForward, LinkAttention, MultiheadAttention
 
 
 class MultiLink(nn.Module):
@@ -57,6 +58,84 @@ class MultiLink(nn.Module):
 
 
 class Decoder(nn.Module):
+    """Decode the first Encodec tokens from context vectors.
+    """
+    def __init__(self,
+                 contexts: int,
+                 kernels: int,
+                 styles: int,
+                 heads: int,
+                 ffn: int,
+                 prototypes: int,
+                 blocks: int,
+                 tokens: int,
+                 kappa: float,
+                 dropout: float = 0.):
+        """Initializer.
+        Args:
+            contexts: size of the context channels.
+            kernels: size of the convolutional kernels, alternatives of PE.
+            styles: size of the style channels.
+            heads: the number of the attention heads.
+            ffn: size of the FFN hidden channels.
+            prototypes: the number of the style vectors.
+            blocks: the number of the attention blocks.
+            tokens: the number of the output tokens.
+            kappa: temperature for softmax.
+            dropout: dropout rates for FFN.
+        """
+        super().__init__()
+        # instead of positional encoding
+        self.preconv = nn.Sequential(
+            nn.Conv1d(
+                contexts, contexts, kernels,
+                padding=kernels // 2, groups=contexts, bias=False),
+            nn.ReLU())
+        # linker
+        self.link = LinkAttention(
+            contexts,
+            styles,
+            heads,
+            ffn,
+            prototypes,
+            blocks,
+            dropout)
+        # classifier heads
+        self.proj = nn.Linear(contexts, contexts)
+        self.tokens = nn.Parameter(torch.randn(1, contexts, tokens))
+        # alias
+        self.kappa = kappa
+
+    def forward(self,
+                contents: torch.Tensor,
+                style: torch.Tensor,
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Refine the x with predicting residual signal.
+        Args:
+            contents: [torch.float32; [B, S, contexts]], content vectors.
+            style: [torch.float32; [B, prototypes, styles]], style vectors.
+            mask: [torch.float32; [B, S]], mask vector.
+        Returns:
+            [torch.float32; [B, S, tokens]], logits of residual tokens.
+        """
+        # [B, S, contexts]
+        x = self.preconv(contents.transpose(1, 2)).transpose(1, 2)
+        # [B, S, contexts]
+        x = self.link.forward(x, style, mask=mask)
+        # [B, S, tokens]
+        x = torch.matmul(
+            F.normalize(self.proj(x), p=2, dim=-1),
+            F.normalize(self.tokens, p=2, dim=1))
+        # temperize
+        x = x / self.kappa
+        if mask is not None:
+            # [B, S, tokens], masking for FFN.
+            x = x * mask[..., :1]
+        # [B, S, tokens]
+        return x
+
+
+class Refiner(nn.Module):
     """Link attention to retrieve content-specific style for reconstruction.
     """
     def __init__(self,
@@ -69,6 +148,7 @@ class Decoder(nn.Module):
                  ffn: int,
                  prototypes: int,
                  blocks: int,
+                 steps: int,
                  tokens: int,
                  kappa: float,
                  dropout: float = 0.):
@@ -83,6 +163,7 @@ class Decoder(nn.Module):
             ffn: size of the FFN hidden channels.
             prototypes: the number of the style vectors.
             blocks: the number of the attention blocks.
+            steps: the number of the timesteps.
             tokens: the number of the output tokens.
             kappa: temperature for softmax.
             dropout: dropout rates for FFN.
@@ -111,7 +192,7 @@ class Decoder(nn.Module):
             for _ in range(blocks)])
         # classification head
         self.proj = nn.Linear(channels, channels)
-        self.tokens = nn.Parameter(torch.randn(1, channels, tokens))
+        self.tokens = nn.Parameter(torch.randn(steps, channels, tokens))
         # alias
         self.kappa = kappa
 
@@ -119,17 +200,19 @@ class Decoder(nn.Module):
                 x: torch.Tensor,
                 contents: torch.Tensor,
                 style: torch.Tensor,
+                steps: torch.Tensor,
                 embed: torch.Tensor,
                 mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Retrieve the content-specific styles.
+        """Refine the x with predicting residual signal.
         Args:
             x: [torch.float32; [B, T, channels]], input vectors.
             contents: [torch.float32; [B, S, contexts]], content vectors.
             style: [torch.float32; [B, prototypes, styles]], style vectors.
+            steps: [torch.long; [B]], timesteps.
             embed: [torch.float32; [B, embed]], time embeddings.
             mask: [torch.float32; [B, T, S]], mask vector.
         Returns:
-            [torch.float32; [B, T, tokens]], linked.
+            [torch.float32; [B, T, tokens]], logits of residual tokens.
         """
         mask_s = None
         if mask is not None:
@@ -137,6 +220,8 @@ class Decoder(nn.Module):
             mask_s = mask[..., 0]
             # [B, T, T]
             mask_s = mask_s[:, None] * mask_s[..., None]
+        # [B, T, channels], alternatives of positional encoding
+        x = self.preconv(x.transpose(1, 2)).transpose(1, 2)
         # blocks x [B, channels]
         embeds = self.mapper(embed).chunk(len(self.blocks))
         for (selfattn, linkattn), embed in zip(self.blocks, embeds):
@@ -149,7 +234,7 @@ class Decoder(nn.Module):
         # [B, T, tokens]
         x = torch.matmul(
             F.normalize(self.proj(x), p=2, dim=-1),
-            F.normalize(self.tokens, p=2, dim=1))
+            F.normalize(self.tokens[steps], p=2, dim=1))
         # temperize
         x = x / self.kappa
         if mask is not None:
