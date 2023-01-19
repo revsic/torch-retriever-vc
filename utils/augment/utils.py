@@ -84,7 +84,7 @@ class PitchShift(nn.Module):
         rate = 2 ** (-steps.float() / bins_per_octave)
         # resampling kernels
         self.resamples = nn.ModuleDict({
-            s.item(): torchaudio.transforms.Resample(orig_freq.item(), sr)
+            str(s.item()): torchaudio.transforms.Resample(orig_freq.item(), sr)
             for s, orig_freq in zip(tqdm(steps.long(), desc='resampler'), (sr / rate).long())})
         # alias
         self.fft, self.hop, self.win = fft, hop, win
@@ -112,7 +112,7 @@ class PitchShift(nn.Module):
         shifted = torch.istft(stretched, self.fft, self.hop, self.win, self.window)
         # B x[T]
         resampled = [
-            self.resamples[step.item()](shift[:slen.item()])
+            self.resamples[str(step.item())](shift[:slen.item()])
             for step, slen, shift in zip(steps, steplen, shifted)]
         return torch.stack([
             F.pad(r[:timesteps], [0, max(0, timesteps - len(r))])
