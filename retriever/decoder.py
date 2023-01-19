@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention.transformer import \
-    AddNorm, AuxSequential, FeedForward, LinkAttention, MultiheadAttention
+from .attention import LinkAttention
+from .attention.transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
 
 
 class MultiLink(nn.Module):
