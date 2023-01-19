@@ -24,8 +24,10 @@ class TrainingWrapper:
         self.model = model
         self.config = config
         self.device = device
-        self.aug = Augment(config)
-        self.encodec = EncodecWrapper(model)
+        self.aug = Augment(config).to(device)
+        self.encodec = EncodecWrapper(config.model.sr).to(device)
+        # alias
+        self.seglen = self.config.train.seglen
 
     def random_segment(self, bunch: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         """Segment the spectrogram and audio into fixed sized array.
@@ -49,7 +51,7 @@ class TrainingWrapper:
         return lengths.clamp_max(self.seglen), seg
 
     def compute_loss(self, seg: torch.Tensor) \
-            -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+            -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the loss.
         Args:
             seg: [torch.float32; [B, T]], segmented speech.
