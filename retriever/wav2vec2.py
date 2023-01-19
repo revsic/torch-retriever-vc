@@ -49,7 +49,7 @@ class Wav2Vec2Wrapper(nn.Module):
     def forward(self,
                 audio: torch.Tensor,
                 audiolen: Optional[torch.Tensor] = None) \
-            -> Tuple[torch.Tensor, torch.Tensor]:
+            -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract the features from audio.
         Args:
             audio: [torch.float32; [B, T']], audio, [-1, 1]-ranged.
@@ -58,6 +58,7 @@ class Wav2Vec2Wrapper(nn.Module):
         Returns:
             speaker, linguistic: [torch.float32; [B, S, C]], speaker, linguistic encodings,
                 where S = T // `strides`, T = ceil(T' / `sr` x `sr_w2v2`)
+            mask: [torch.float32; [B, S]], sequence mask.
         """
         # [B, T]
         audio = self.resample(audio)
@@ -88,7 +89,15 @@ class Wav2Vec2Wrapper(nn.Module):
         # [B, S, C(=1024)]
         speaker = output.hidden_states[self.speaker]
         linguistic = output.hidden_states[self.linguistic]
-        return speaker, linguistic
+        # S
+        _, seqlen, _ = speaker.shape
+        # [B, S]
+        mask = (
+            torch.arange(seqlen, device=speaker.device)[None]
+            # downsampled size
+            < torch.ceil(audiolen / self.strides).to(torch.long)).to(torch.float32)
+        # masking
+        return speaker * mask[..., None], linguistic * mask[..., None], mask
 
     def train(self, mode: bool = True):
         """Support only evaluation
