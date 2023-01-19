@@ -79,7 +79,7 @@ class TrainingWrapper:
         # alias
         timesteps = self.config.model.timesteps
         # [B], [0, timesteps - 1]-ranged.
-        steps = (torch.rand(bsize, device=seg.device) * timesteps).long()
+        steps = (torch.rand(bsize, device=self.device) * timesteps).long()
         # [timesteps - 1, embeds]
         embeds = self.model.steps(timesteps - 1)
         # [B, S, contexts]
@@ -92,11 +92,51 @@ class TrainingWrapper:
         # []
         ce_rst = F.cross_entropy(
             torch.softmax(logits.transpose(1, 2), dim=1),
-            codebook[torch.arange(bsize), steps])
+            codebook[torch.arange(bsize, device=self.device), steps])
+
+        with torch.no_grad():
+            # [B, S]
+            aug = ...
+            # [B, L, w2v2_channels]
+            _, ling_aug, _ = self.model.wav2vec2.forward(aug)
+        # [2, B, L, ling_hiddens]
+        ling_ex = torch.stack([
+            ling,
+            self.model.linguistic.forward(ling_aug)], dim=0)
+        # L
+        num_tokens = ling_ex.shape[2]
+        # alias
+        conf_t = self.config.train
+        n_adj, n_cand, kappa = conf_t.num_adj, conf_t.num_cand, conf_t.kappa
+        # [B, L], positive
+        pos = ling_ex.prod(dim=0).sum(dim=-2) / kappa
+        # [2, B, L, L]
+        confusion = torch.matmul(ling_ex, ling_ex.transpose(2, 3)) / kappa
+        # [L]
+        placeholder = torch.zeros(num_tokens, device=self.device)
+        # [L, L]
+        mask = torch.stack([
+            placeholder.scatter(
+                0,
+                (
+                    torch.randperm(num_tokens - n_adj, device=self.device)[:n_cand]
+                    + i + n_adj // 2 + 1) % num_tokens,
+                1.)
+            for i in range(num_tokens)])
+        # include self
+        mask = mask + torch.eye(bsize, device=self.device)
+        # [2, B, L, L(sum = candidates)], negative case
+        masked = confusion.masked_fill(~mask.to(torch.bool), -np.inf)
+        # [2, B, L], negative case
+        neg = torch.logsumexp(masked, dim=-1)
+        # []
+        cont_loss = -torch.logsumexp(pos - neg, dim=-1).sum(dim=0).mean()
 
         # []
-        loss = ce_fst + ce_rst
+        loss = ce_fst + ce_rst + conf_t.lambda_cont * cont_loss
         losses = {
             'loss': loss.item(),
-            'ce-fst': ce_fst.item(), 'ce-rst': ce_rst.item()}
+            'ce-fst': ce_fst.item(),
+            'ce-rst': ce_rst.item(),
+            'cont': cont_loss.item()}
         return loss, losses

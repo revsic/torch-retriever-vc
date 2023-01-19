@@ -16,10 +16,11 @@ class TrainConfig:
         self.beta1 = 0.9
         self.beta2 = 0.999
 
-        # loss weights
-        self.lambda_rec = 5
-        self.lambda_vq = 0.3
-        self.lambda_sc = 0.1
+        # contents loss
+        self.lambda_cont = 5
+        self.num_adj = 10
+        self.num_cand = 15
+        self.kappa = 0.1
 
         # loader settings
         self.split = -500
