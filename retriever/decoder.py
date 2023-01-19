@@ -129,7 +129,7 @@ class Decoder(nn.Module):
             embed: [torch.float32; [B, embed]], time embeddings.
             mask: [torch.float32; [B, T, S]], mask vector.
         Returns:
-            [torch.float32; [B, T, channels]], linked.
+            [torch.float32; [B, T, tokens]], linked.
         """
         mask_s = None
         if mask is not None:
@@ -153,7 +153,7 @@ class Decoder(nn.Module):
         # temperize
         x = x / self.kappa
         if mask is not None:
-            # [B, T, C], masking for FFN.
+            # [B, T, tokens], masking for FFN.
             x = x * mask[..., :1]
-        # [B, T, C]
+        # [B, T, tokens]
         return x
