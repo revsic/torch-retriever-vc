@@ -1,5 +1,6 @@
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
@@ -33,6 +34,7 @@ class Wav2Vec2Wrapper(nn.Module):
         self.model = Wav2Vec2Model.from_pretrained(name)
         # alias
         self.channels = self.model.config.output_hidden_size
+        self.strides = np.prod(self.model.config.conv_stride).item()
         self.speaker = speaker or Wav2Vec2Wrapper.SPEAKER
         self.linguistic = linguistic or Wav2Vec2Wrapper.LINGUISTIC
         # feature extractor
@@ -54,8 +56,8 @@ class Wav2Vec2Wrapper(nn.Module):
             audiolen: [torch.long; [B]], length of the audios,
                 masking the inputs if provided.
         Returns:
-            speaker, linguistic: [torch.float32; [B, S, C]], linguistic encodings,
-                where S = T // 320, T = ceil(T' / `sr` x 16000)
+            speaker, linguistic: [torch.float32; [B, S, C]], speaker, linguistic encodings,
+                where S = T // `strides`, T = ceil(T' / `sr` x `sr_w2v2`)
         """
         # [B, T]
         audio = self.resample(audio)
@@ -93,7 +95,7 @@ class Wav2Vec2Wrapper(nn.Module):
         """
         if mode:
             import warnings
-            warnings.warn('WhisperWrapper does not support training mode')
+            warnings.warn('Wav2Vec2Wrapper does not support training mode')
         else:
             # super call
             super().train(False)

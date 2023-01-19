@@ -1,7 +1,13 @@
 class Config:
     """Retriever, module configurations.
     """
+    # hardcoded
+    ENCODEC_STRIDES = 320
+
     def __init__(self):
+        self.sr = 24000
+        self.w2v2_name = 'facebook/wav2vec2-large-xlsr-53'
+
         # channels
         self.contexts = 512    # context channels
         self.styles = 192      # style channels
