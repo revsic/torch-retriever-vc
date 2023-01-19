@@ -16,6 +16,16 @@ class TrainConfig:
         self.beta1 = 0.9
         self.beta2 = 0.999
 
+        # augment
+        self.pitch_shift = 2.
+        self.cutoff_lowpass = 60
+        self.cutoff_highpass = 10000
+        self.q_min = 2
+        self.q_max = 5
+        self.num_peak = 8
+        self.g_min = -12
+        self.g_max = 12
+
         # contents loss
         self.lambda_cont = 5
         self.num_adj = 10

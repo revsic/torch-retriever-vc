@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from config import Config
 from retriever import Retriever
 
+from .augment import Augment
 from .encodec import EncodecWrapper
 
 
@@ -23,6 +24,7 @@ class TrainingWrapper:
         self.model = model
         self.config = config
         self.device = device
+        self.aug = Augment(config)
         self.encodec = EncodecWrapper(model)
 
     def random_segment(self, bunch: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -57,8 +59,13 @@ class TrainingWrapper:
         with torch.no_grad():
             # [B, num_q, S]
             codebook = self.encodec.forward(seg)
+            # [B, S]
+            aug1 = self.aug.augment(seg)
+            aug2 = self.aug.augment(seg)
             # 2 x [B, L, w2v2_channels], [B, L]
-            spk, ling, _ = self.model.wav2vec2.forward(seg)
+            spk, ling, _ = self.model.wav2vec2.forward(aug1)
+            # [B, L, w2v2_channels]
+            _, ling2, _ = self.model.wav2vec2.forward(aug2)
         # [B, L, ling_hiddens]
         ling = self.model.linguistic.forward(ling)
         # [B, prototypes, styles]
@@ -94,15 +101,10 @@ class TrainingWrapper:
             torch.softmax(logits.transpose(1, 2), dim=1),
             codebook[torch.arange(bsize, device=self.device), steps])
 
-        with torch.no_grad():
-            # [B, S]
-            aug = ...
-            # [B, L, w2v2_channels]
-            _, ling_aug, _ = self.model.wav2vec2.forward(aug)
         # [2, B, L, ling_hiddens]
         ling_ex = torch.stack([
             ling,
-            self.model.linguistic.forward(ling_aug)], dim=0)
+            self.model.linguistic.forward(ling2)], dim=0)
         # L
         num_tokens = ling_ex.shape[2]
         # alias
