@@ -7,32 +7,26 @@ sys.path.append(ENCODEC_PATH)
 from encodec import EncodecModel
 sys.path.pop()
 
-from typing import Optional
-
 import torch
+import torch.nn as nn
 import torchaudio
 
 
-class EncodecWrapper:
+class EncodecWrapper(nn.Module):
     """Encodec Wrapper
     """
     # hardcoded
     STRIDES = 320
 
-    def __init__(self, sr: int, device: Optional[torch.device] = None):
+    def __init__(self, sr: int):
         """Initializer.
         Args:
-            device: target computing device.
+            sr: sampling rate.
         """
-        device = device or torch.device(
-            'cuda' if torch.cuda.is_available() else 'cpu')
-        self.device = device
+        super().__init__()
         # return evalution mode
         self.model = EncodecModel.encodec_model_24khz()
-        self.model.to(device)
-
         self.resampler = torchaudio.transforms.Resample(sr, self.model.sample_rate)
-        self.resampler.to(device)
         # alias
         self.num_q = self.model.quantizer.n_q
         self.sr = self.model.sample_rate
@@ -66,3 +60,23 @@ class EncodecWrapper:
         audio = self.model.decode([(code, None)])
         # [B, S]
         return audio.squeeze(dim=1)
+
+    def train(self, mode: bool = True):
+        """Support only evaluation
+        """
+        if mode:
+            import warnings
+            warnings.warn('Wav2Vec2Wrapper does not support training mode')
+        else:
+            # super call
+            super().train(False)
+
+    def state_dict(self, *args, **kwargs):
+        """Do not return the state dict.
+        """
+        return {}
+
+    def _load_from_state_dict(self, *args, **kwargs):
+        """Do not load state dict.
+        """
+        pass
