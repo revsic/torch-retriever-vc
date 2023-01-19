@@ -91,7 +91,7 @@ class Augment(nn.Module):
             self.window).clamp(-1., 1.)
         # max value normalization
         out = out / out.abs().max(dim=-1, keepdim=True).values.clamp_min(1e-7)
-        if pitch_shift:
+        if pitch_shift is not None:
             # [B], in midi-range
             steps = (12 * pitch_shift.log2()).long()
             # [B, T]
