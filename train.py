@@ -118,7 +118,6 @@ class Trainer:
                     #         'train/gt', self.mel_img(mel), step)
                     #     self.train_log.add_image(
                     #         'train/synth', self.mel_img(aux['synth'][Trainer.LOG_IDX]), step)
-                    break
 
             cumul = {key: [] for key in losses}
             with torch.no_grad():
@@ -127,7 +126,6 @@ class Trainer:
                     _, losses = self.wrapper.compute_loss(seg)
                     for key, val in losses.items():
                         cumul[key].append(val)
-                    break
                 # test log
                 for key, val in cumul.items():
                     self.test_log.add_scalar(f'loss/{key}', np.mean(val), step)
