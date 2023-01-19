@@ -48,14 +48,14 @@ class Retriever(nn.Module):
         self.dec_fst = Decoder(
             config.contexts,
             config.fst_kernels,
-            config.stles,
+            config.styles,
             config.fst_heads,
             config.fst_ffn,
             config.prototypes,
             config.fst_blocks,
             config.encodecs,
             config.kappa,
-            config.dropout)
+            config.fst_dropout)
 
         self.steps = nn.Sequential(
             SinusoidalPE(config.pe, config.timesteps - 1),
