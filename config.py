@@ -43,7 +43,8 @@ class TrainConfig:
         self.epoch = 50
 
         # segment length
-        self.seglen = int(sr // hop) * 4
+        sec = 1
+        self.seglen = sec * int(sr // hop) * hop
 
         # path config
         self.log = './log'
@@ -62,7 +63,7 @@ class Config:
     def __init__(self):
         self.data = DataConfig(batch=None)
         self.train = TrainConfig(self.data.sr, self.data.hop)
-        self.model = ModelConfig(self.data.mel)
+        self.model = ModelConfig()
 
     def dump(self):
         """Dump configurations into serializable dictionary.
