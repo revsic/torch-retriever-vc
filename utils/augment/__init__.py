@@ -1,10 +1,11 @@
 from typing import List, Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torchaudio.functional as AF
 
 from .peq import ParametricEqualizer
+from .utils import PitchShift
 
 from config import Config
 
@@ -20,7 +21,7 @@ class Augment(nn.Module):
         super().__init__()
         self.config = config
         self.peq = ParametricEqualizer(
-            config.data.sr, config.data.win)
+            config.model.sr, config.data.win)
         self.register_buffer(
             'window',
             torch.hann_window(config.data.win),
@@ -33,6 +34,9 @@ class Augment(nn.Module):
             'peak_centers',
             f_min * (f_max / f_min) ** (torch.arange(peaks + 2)[1:-1] / (peaks + 1)),
             persistent=False)
+        # batch shifting supports
+        step = int(np.log2(config.train.pitch_shift) * config.train.bins_per_octave)
+        self.pitch_shift = PitchShift(config.model.sr, -step, step, config.train.bins_per_octave)
 
     def forward(self,
                 wavs: torch.Tensor,
@@ -95,9 +99,7 @@ class Augment(nn.Module):
             # [B], in midi-range
             steps = (12 * pitch_shift.log2()).long()
             # [B, T]
-            out = torch.stack([
-                AF.pitch_shift(o, self.config.model.sr, step.item(), bins_per_octave=12)
-                for o, step in zip(out, steps)], dim=0)
+            out = self.pitch_shift.forward(out, steps)
         return out
 
     def sample_like(self, signal: torch.Tensor) -> List[torch.Tensor]:

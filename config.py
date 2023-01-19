@@ -18,6 +18,7 @@ class TrainConfig:
 
         # augment
         self.pitch_shift = 2.
+        self.bins_per_octave = 12
         self.cutoff_lowpass = 60
         self.cutoff_highpass = 10000
         self.q_min = 2
@@ -61,9 +62,9 @@ class Config:
     """Integrated configuration.
     """
     def __init__(self):
-        self.data = DataConfig(batch=None)
-        self.train = TrainConfig(self.data.sr, self.data.hop)
         self.model = ModelConfig()
+        self.data = DataConfig(batch=None)
+        self.train = TrainConfig(self.model.sr, self.data.hop)
 
     def dump(self):
         """Dump configurations into serializable dictionary.
