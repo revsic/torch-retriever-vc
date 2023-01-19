@@ -4,3 +4,7 @@ __pycache__
 # test purpose
 run.sh
 test.py
+
+# train
+ckpt
+log
