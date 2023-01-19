@@ -34,6 +34,7 @@ class Config:
         self.ret_dropout = 0.1
 
         # decoder
+        self.fst_kernels = 31
         self.fst_heads = 4
         self.fst_ffn = 2048
         self.fst_blocks = 8
