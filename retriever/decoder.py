@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import LinkAttention
 from .attention.transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
 
 
@@ -54,84 +53,6 @@ class MultiLink(nn.Module):
         x = self.proj(torch.cat([x_a, x_b], dim=-1))
         if mask is not None:
             x = x[..., :1]
-        return x
-
-
-class Decoder(nn.Module):
-    """Decode the first Encodec tokens from context vectors.
-    """
-    def __init__(self,
-                 contexts: int,
-                 kernels: int,
-                 styles: int,
-                 heads: int,
-                 ffn: int,
-                 prototypes: int,
-                 blocks: int,
-                 tokens: int,
-                 kappa: float,
-                 dropout: float = 0.):
-        """Initializer.
-        Args:
-            contexts: size of the context channels.
-            kernels: size of the convolutional kernels, alternatives of PE.
-            styles: size of the style channels.
-            heads: the number of the attention heads.
-            ffn: size of the FFN hidden channels.
-            prototypes: the number of the style vectors.
-            blocks: the number of the attention blocks.
-            tokens: the number of the output tokens.
-            kappa: temperature for softmax.
-            dropout: dropout rates for FFN.
-        """
-        super().__init__()
-        # instead of positional encoding
-        self.preconv = nn.Sequential(
-            nn.Conv1d(
-                contexts, contexts, kernels,
-                padding=kernels // 2, groups=contexts, bias=False),
-            nn.ReLU())
-        # linker
-        self.link = LinkAttention(
-            contexts,
-            styles,
-            heads,
-            ffn,
-            prototypes,
-            blocks,
-            dropout)
-        # classifier heads
-        self.proj = nn.Linear(contexts, contexts)
-        self.tokens = nn.Parameter(torch.randn(1, contexts, tokens))
-        # alias
-        self.kappa = kappa
-
-    def forward(self,
-                contents: torch.Tensor,
-                style: torch.Tensor,
-                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Refine the x with predicting residual signal.
-        Args:
-            contents: [torch.float32; [B, S, contexts]], content vectors.
-            style: [torch.float32; [B, prototypes, styles]], style vectors.
-            mask: [torch.float32; [B, S]], mask vector.
-        Returns:
-            [torch.float32; [B, S, tokens]], logits of residual tokens.
-        """
-        # [B, S, contexts]
-        x = self.preconv(contents.transpose(1, 2)).transpose(1, 2)
-        # [B, S, contexts]
-        x = self.link.forward(x, style, mask=mask)
-        # [B, S, tokens]
-        x = torch.matmul(
-            F.normalize(self.proj(x), p=2, dim=-1),
-            F.normalize(self.tokens, p=2, dim=1))
-        # temperize
-        x = x / self.kappa
-        if mask is not None:
-            # [B, S, tokens], masking for FFN.
-            x = x * mask[..., :1]
-        # [B, S, tokens]
         return x
 
 

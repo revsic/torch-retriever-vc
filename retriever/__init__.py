@@ -4,9 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import CrossAttention, SinusoidalPE
+from .attention import AuxSequential, CrossAttention, LinkAttention, SinusoidalPE
 from .config import Config
-from .decoder import Decoder, Refiner
+from .decoder import Refiner
 from .linguistic import LinguisticEncoder
 from .wav2vec2 import Wav2Vec2Wrapper
 
@@ -28,7 +28,6 @@ class Retriever(nn.Module):
         # LinguisticEncoder
         self.linguistic = LinguisticEncoder(
             self.wav2vec2.channels,
-            config.ling_kernels,
             config.ling_hiddens,
             config.ling_heads,
             config.ling_ffn,
@@ -45,17 +44,16 @@ class Retriever(nn.Module):
             config.ret_dropout)
 
         self.proj_fst = nn.Linear(config.ling_hiddens, config.contexts)
-        self.dec_fst = Decoder(
-            config.contexts,
-            config.fst_kernels,
-            config.styles,
-            config.fst_heads,
-            config.fst_ffn,
-            config.prototypes,
-            config.fst_blocks,
-            config.encodecs,
-            config.kappa,
-            config.fst_dropout)
+        self.dec_fst = AuxSequential(
+            LinkAttention(
+                config.contexts,
+                config.styles,
+                config.fst_heads,
+                config.fst_ffn,
+                config.prototypes,
+                config.fst_blocks,
+                config.fst_dropout),
+            nn.Linear(config.contexts, config.encodecs))
 
         self.steps = nn.Sequential(
             SinusoidalPE(config.pe, config.timesteps - 1),
