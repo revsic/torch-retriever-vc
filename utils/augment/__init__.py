@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from .peq import ParametricEqualizer
-from .utils import PitchShift
+from .pshift import PitchShift
 
 from config import Config
 
@@ -35,8 +35,7 @@ class Augment(nn.Module):
             f_min * (f_max / f_min) ** (torch.arange(peaks + 2)[1:-1] / (peaks + 1)),
             persistent=False)
         # batch shifting supports
-        step = int(np.log2(config.train.pitch_shift) * config.train.bins_per_octave)
-        self.pitch_shift = PitchShift(config.model.sr, -step, step, config.train.bins_per_octave)
+        self.pitch_shift = PitchShift(config.model.sr, config.train.bins_per_octave)
 
     def forward(self,
                 wavs: torch.Tensor,
