@@ -95,7 +95,7 @@ class Wav2Vec2Wrapper(nn.Module):
         mask = (
             torch.arange(seqlen, device=speaker.device)[None]
             # downsampled size
-            < torch.ceil(audiolen / self.strides).to(torch.long)).to(torch.float32)
+            < torch.ceil(audiolen[:, None] / self.strides).to(torch.long)).to(torch.float32)
         # masking
         return speaker * mask[..., None], linguistic * mask[..., None], mask
 
