@@ -77,7 +77,6 @@ class Retriever(nn.Module):
             config.rst_blocks,
             config.timesteps - 1,
             config.encodecs,
-            config.kappa,
             config.rst_dropout)
 
     def forward(self,

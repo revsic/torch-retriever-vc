@@ -70,7 +70,6 @@ class Refiner(nn.Module):
                  blocks: int,
                  steps: int,
                  tokens: int,
-                 kappa: float,
                  dropout: float = 0.):
         """Initializer.
         Args:
@@ -84,7 +83,6 @@ class Refiner(nn.Module):
             blocks: the number of the attention blocks.
             steps: the number of the timesteps.
             tokens: the number of the output tokens.
-            kappa: temperature for softmax.
             dropout: dropout rates for FFN.
         """
         super().__init__()
@@ -106,10 +104,8 @@ class Refiner(nn.Module):
                     AddNorm(channels, FeedForward(channels, ffn, dropout)))])
             for _ in range(blocks)])
         # classification head
-        self.proj = nn.Linear(channels, channels)
-        self.tokens = nn.Parameter(torch.randn(steps, channels, tokens))
-        # alias
-        self.kappa = kappa
+        self.weight = nn.Parameter(torch.randn(steps, channels, tokens))
+        self.bias = nn.Parameter(torch.randn(steps, tokens))
 
     def forward(self,
                 x: torch.Tensor,
@@ -147,11 +143,7 @@ class Refiner(nn.Module):
             # [B, T, C]
             x = linkattn(x, self.linkkey, style, contents, mask=mask)
         # [B, T, tokens]
-        x = torch.matmul(
-            F.normalize(self.proj(x), p=2, dim=-1),
-            F.normalize(self.tokens[steps], p=2, dim=1))
-        # temperize
-        x = x / self.kappa
+        x = torch.matmul(x, self.weight[steps]) + self.bias[steps, None]
         if mask is not None:
             # [B, T, tokens], masking for FFN.
             x = x * mask[..., :1]

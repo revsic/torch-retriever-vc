@@ -42,5 +42,3 @@ class Config:
         self.rst_ffn = 2048
         self.rst_blocks = 12
         self.rst_dropout = 0.5
-
-        self.kappa = 0.1
