@@ -158,8 +158,8 @@ class TrainingWrapper:
         cont_loss = -torch.logsumexp(pos - neg, dim=-1).sum(dim=0).mean()
 
         # metric purpose
-        metric_pos = pos.mean().item()
-        metric_neg = ((confusion * mask).sum(dim=-1) / n_cand).mean().item()
+        metric_pos = pos.mean().item() * kappa
+        metric_neg = ((confusion * mask).sum(dim=-1) / n_cand).mean().item() * kappa
 
         # []
         loss = ce_fst + ce_rst + conf_t.lambda_cont * cont_loss
