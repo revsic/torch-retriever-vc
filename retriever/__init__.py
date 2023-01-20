@@ -132,8 +132,8 @@ class Retriever(nn.Module):
         logits = self.dec_fst.forward(ling_fst.transpose(1, 2), refstyle, mask=mask_c)
         # [B, S], sampling
         code = torch.multinomial(torch.softmax(logits, dim=-1), 1).squeeze(dim=-1) * mask_c
-        # timesteps x [B, S]
-        codes = [code]
+        # timesteps x [B, S], [B, S, contexts]
+        codes, cumsum = [code], torch.zeros(bsize, clen, self.config.contexts)
         # [B, S, L]
         mask = mask_c[..., None] * mask[:, None]
         # [timesteps - 1, embeds]
@@ -141,12 +141,12 @@ class Retriever(nn.Module):
         # [embeds], [encodecs, contexts]
         for i, (pe, codebook) in enumerate(zip(embeds, self.codebooks)):
             # [B, S, contexts]
-            code = codebook(code) * mask_c[..., None]
+            cumsum = cumsum + codebook(code) * mask_c[..., None]
             # [1]
             steps = torch.tensor([i], device=device)
             # [B, S, tokens]
             logits = self.dec_rst.forward(
-                code, ling, refstyle, steps, pe[None], mask=mask)
+                cumsum, ling, refstyle, steps, pe[None], mask=mask)
             # [B, S], greedy search
             code = logits.argmax(dim=-1) * mask_c
             codes.append(code)
