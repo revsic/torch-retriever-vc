@@ -29,7 +29,7 @@ class LinguisticEncoder(nn.Module):
         super().__init__()
         self.proj = nn.Linear(channels, hiddens)
         self.encoder = AuxSequential(
-            SelfAttention(channels, heads, ffn, blocks, dropout),
+            SelfAttention(hiddens, heads, ffn, blocks, dropout),
             nn.Linear(hiddens, hiddens))
 
     def forward(self, inputs: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -44,4 +44,6 @@ class LinguisticEncoder(nn.Module):
         x = self.proj(inputs)
         # [B, S, hiddens]
         out = F.normalize(self.encoder(x, mask=mask), dim=-1)
-        return out * mask[..., None]
+        if mask is not None:
+            out = out * mask[..., None]
+        return out
