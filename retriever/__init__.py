@@ -87,14 +87,15 @@ class Retriever(nn.Module):
                 audio: torch.Tensor,
                 audlen: Optional[torch.Tensor] = None,
                 refstyle: Optional[torch.Tensor] = None) -> \
-            Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+            Tuple[torch.Tensor, torch.Tensor]:
         """Synthesize the codebook.
         Args:
             audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
             audlen: [torch.long; [B]], lengths of the audio.
             refstyle: [torch.float32; [B, prototypes, styles]], style tokens, use it if provided.
         Returns:
-            [torch.float32; [B, ]], re-sytnehsized spectrogram.
+            [torch.long; [B, timesteps, S]], sytnehsized audio codecs.
+            [torch.float32; [B, prototypes, styles]], style of the given audio.
         """
         device = audio.device
         # B, T
@@ -130,10 +131,12 @@ class Retriever(nn.Module):
         refstyle = refstyle or style
         # [B, S, tokens]
         logits = self.dec_fst.forward(ling_fst.transpose(1, 2), refstyle, mask=mask_c)
+        # [B x S, tokens]
+        prob = torch.softmax(logits, dim=-1).view(-1, self.config.encodecs)
         # [B, S], sampling
-        code = torch.multinomial(torch.softmax(logits, dim=-1), 1).squeeze(dim=-1) * mask_c
+        code = torch.multinomial(prob, 1).view(bsize, -1)
         # timesteps x [B, S], [B, S, contexts]
-        codes, cumsum = [code], torch.zeros(bsize, clen, self.config.contexts)
+        codes, cumsum = [code], torch.zeros(bsize, clen, self.config.contexts, device=device)
         # [B, S, L]
         mask = mask_c[..., None] * mask[:, None]
         # [timesteps - 1, embeds]
@@ -148,10 +151,10 @@ class Retriever(nn.Module):
             logits = self.dec_rst.forward(
                 cumsum, ling, refstyle, steps, pe[None], mask=mask)
             # [B, S], greedy search
-            code = logits.argmax(dim=-1) * mask_c
+            code = logits.argmax(dim=-1)
             codes.append(code)
         # [B, timesteps, S]
-        return torch.stack(codes, dim=1)
+        return torch.stack(codes, dim=1) * mask_c[:, None].long(), style
 
     def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
         """Save the models.
