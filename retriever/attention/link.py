@@ -52,7 +52,11 @@ class LinkAttention(nn.Module):
             [torch.float32; [B, T, contexts]], linked.
         """
         x = contents
+        # placeholder
+        mask_c = None
         if mask is not None:
+            # [B, T, 1]
+            mask_c = mask[..., None]
             # [B, T, T]
             mask = mask[:, None] * mask[..., None]
         # [B, S, C]
@@ -61,9 +65,9 @@ class LinkAttention(nn.Module):
             # [B, T, C]
             x = selfattn(x, x, x, mask=mask)
             # [B, T, C]
-            x = linkattn(x, linkkey, style, mask=mask[..., :1])
+            x = linkattn(x, linkkey, style, mask=mask_c)
         if mask is not None:
             # [B, T, C], masking for FFN.
-            x = x * mask[..., :1]
+            x = x * mask_c
         # [B, T, C]
         return x
