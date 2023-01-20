@@ -20,6 +20,8 @@ class Trainer:
     """Retriever trainer.
     """
     LOG_IDX = 0
+    LOG_AUDIO = 5
+    LOG_MAXLEN = 3
 
     def __init__(self,
                  model: Retriever,
@@ -71,7 +73,12 @@ class Trainer:
 
         self.ckpt_path = os.path.join(
             config.train.ckpt, config.train.name, config.train.name)
-
+        # overwrite to the model sampling rate
+        backup, config.data.sr = config.data.sr, config.model.sr
+        self.spec = speechset.utils.MelSTFT(config.data)
+        # rollback
+        config.data.sr = backup
+        # colormap
         self.cmap = np.array(plt.get_cmap('viridis').colors)
 
     def train(self, epoch: int = 0):
@@ -96,7 +103,7 @@ class Trainer:
                     pbar.set_postfix({'loss': loss.item(), 'step': step})
 
                     for key, val in losses.items():
-                        self.train_log.add_scalar(f'loss/{key}', val, step)
+                        self.train_log.add_scalar(key, val, step)
 
                     with torch.no_grad():
                         grad_norm = np.mean([
@@ -111,15 +118,28 @@ class Trainer:
                     self.train_log.add_scalar(
                         'common/learning-rate', self.optim.param_groups[0]['lr'], step)
 
-                    # if (it + 1) % (len(self.loader) // 50) == 0:
-                    #     mel = mel[Trainer.LOG_IDX].cpu().numpy()
-                    #     self.train_log.add_image(
-                    #         # [3, M, T]
-                    #         'train/gt', self.mel_img(mel), step)
-                    #     self.train_log.add_image(
-                    #         'train/synth', self.mel_img(aux['synth'][Trainer.LOG_IDX]), step)
+                    if it % (len(self.loader) // 50) == 0:
+                        idx = Trainer.LOG_IDX
+                        with torch.no_grad():
+                            self.model.eval()
+                            # [1, tiemsteps, S]
+                            codes, _ = self.model.forward(seg[idx:idx + 1])
+                            # [T]
+                            rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                            self.model.train()
+
+                        self.train_log.add_image(
+                            # [3, M, T]
+                            'train/gt', self.mel_img(seg[idx].cpu().numpy()), step)
+                        self.train_log.add_audio(
+                            'train/gt', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
+                        self.train_log.add_image(
+                            'train/synth', self.mel_img(rctor.cpu().numpy()), step)
+                        self.train_log.add_audio(
+                            'train/synth', rctor[None], step, sample_rate=self.config.model.sr)
 
             cumul = {key: [] for key in losses}
+            cumul.update({f'metric-aux/step{i + 1}': [] for i in range(config.model.timesteps - 1)})
             with torch.no_grad():
                 for bunch in self.testloader:
                     _, seg = self.wrapper.random_segment(self.testset.collate(bunch))
@@ -128,32 +148,45 @@ class Trainer:
                         cumul[key].append(val)
                 # test log
                 for key, val in cumul.items():
-                    self.test_log.add_scalar(f'loss/{key}', np.mean(val), step)
+                    self.test_log.add_scalar(key, np.mean(val), step)
+                # [B, T], [B]
+                speeches, lengths = self.testset.collate(bunch)
+                # [B]
+                bsize, = lengths.shape
+                for i in range(Trainer.LOG_AUDIO):
+                    idx = (Trainer.LOG_IDX + i) % bsize
+                    # min-length
+                    len_ = min(
+                        lengths[idx].item(),
+                        int(Trainer.LOG_MAXLEN * self.config.model.sr))
+                    # [T], gt plot
+                    speech = speeches[idx, :len_]
+                    self.test_log.add_image(
+                        f'test{i}/gt', self.mel_img(speech.cpu().numpy()), step)
+                    self.test_log.add_audio(
+                        f'test{i}/gt', speech[None], step, sample_rate=self.config.model.sr)
 
-                # # wrap last bunch
-                # _, _, mel, _, mellen = bunch
-                # # [T, M], gt plot
-                # mel = mel[Trainer.LOG_IDX, :mellen[Trainer.LOG_IDX]]
-                # self.test_log.add_image('test/gt', self.mel_img(mel), step)
-
-                # # inference
-                # self.model.eval()
-                # # [1, T, M]
-                # synth, _ = self.model(torch.tensor(mel[None], device=device))
-                # self.model.train()
-                # # [T, M]
-                # synth = synth.squeeze(0).cpu().detach().numpy()
-                # self.test_log.add_image('test/synth', self.mel_img(synth), step)
+                    # [1, tiemsteps, S]
+                    codes, _ = self.model.forward(speech[None])
+                    # [T]
+                    rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                    self.test_log.add_image(
+                        f'test{i}/synth', self.mel_img(rctor.cpu().numpy()), step)
+                    self.test_log.add_audio(
+                        f'test{i}/synth', rctor[None], step, sample_rate=self.config.model.sr)
+                self.model.train()
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
 
-    def mel_img(self, mel: np.ndarray) -> np.ndarray:
+    def mel_img(self, audio: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
         Args:
-            mel: [float32; [T, M]], spectrogram.
+            audio: [np.float32; [T x hop]], audio signal.
         Returns:
-            [float32; [3, M, T]], mel-spectrogram in viridis color map.
+            [np.float32; [3, mel, T]], mel-spectrogram in viridis color map.
         """
+        # [T, mel]
+        mel = self.spec(audio)
         # minmax norm in range(0, 1)
         mel = (mel - mel.min()) / (mel.max() - mel.min() + 1e-7)
         # in range(0, 255)
@@ -211,11 +244,14 @@ if __name__ == '__main__':
             speechset.datasets.VCTK('/data1/audio/vctk/VCTK-Corpus', sr),
             speechset.datasets.LibriTTS('/data1/audio/libritts/LibriTTS/train-clean-360', sr)]),
         device=device)
-    dataset = WeightedRandomWrapper(dataset, subepoch=1)
+    dataset = WeightedRandomWrapper(dataset)
 
     testset = RealtimeWavDataset(
         speechset.datasets.LibriSpeech('/data1/audio/librispeech/LibriSpeech/test-clean', sr),
         device=device)
+    # shuffle
+    rng, idxer = np.random.default_rng(0), testset.indexer
+    testset.indexer = [idxer[i] for i in rng.permutation(len(idxer))]
 
     # model definition
     model = Retriever(config.model)

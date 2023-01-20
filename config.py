@@ -44,7 +44,7 @@ class TrainConfig:
         self.epoch = 50
 
         # segment length
-        sec = 1
+        sec = 2
         self.seglen = sec * int(sr // hop) * hop
 
         # path config
