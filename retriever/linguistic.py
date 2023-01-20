@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -40,7 +42,7 @@ class LinguisticEncoder(nn.Module):
             SelfAttention(hiddens, heads, ffn, blocks, dropout),
             nn.Linear(hiddens, hiddens))
 
-    def forward(self, inputs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Extract the linguistic informations.
         Args:
             inputs: [torch.float32; [B, S, channels]], input tensors.
@@ -51,4 +53,4 @@ class LinguisticEncoder(nn.Module):
         # [B, hiddens, S]
         x = self.preconv(inputs.transpose(1, 2))
         # [B, S, hiddens]
-        return self.encoder(x.transpose(1, 2), mask)
+        return self.encoder(x.transpose(1, 2), mask=mask)
