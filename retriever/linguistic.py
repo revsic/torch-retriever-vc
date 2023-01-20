@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .attention import AuxSequential, SelfAttention
 
@@ -11,7 +12,6 @@ class LinguisticEncoder(nn.Module):
     """
     def __init__(self,
                  channels: int,
-                 kernels: int,
                  hiddens: int,
                  heads: int,
                  ffn: int,
@@ -20,26 +20,16 @@ class LinguisticEncoder(nn.Module):
         """Initializer.
         Args:
             channels: size of the input channels.
-            kernels: convolutional kernels.
-            hiddens: size of the hidden units.
+            hiddens: size of the hidden channels.
             heads: the number of the attention heads.
             ffn: size of the FFN hidden channels.
             blocks: the number of the attention blocks.
             dropout: dropout rates for FFN.
         """
         super().__init__()
-        self.preconv = nn.Sequential(
-            nn.Conv1d(channels, hiddens, 1),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            # instead of positional encoding
-            nn.Conv1d(
-                hiddens, hiddens, kernels,
-                padding=kernels // 2, groups=hiddens, bias=False),
-            nn.ReLU())
-
+        self.proj = nn.Linear(channels, hiddens)
         self.encoder = AuxSequential(
-            SelfAttention(hiddens, heads, ffn, blocks, dropout),
+            SelfAttention(channels, heads, ffn, blocks, dropout),
             nn.Linear(hiddens, hiddens))
 
     def forward(self, inputs: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -50,7 +40,8 @@ class LinguisticEncoder(nn.Module):
         Returns:
             [torch.float32; [B, S, hiddens]], extracted.
         """
-        # [B, hiddens, S]
-        x = self.preconv(inputs.transpose(1, 2))
         # [B, S, hiddens]
-        return self.encoder(x.transpose(1, 2), mask=mask)
+        x = self.proj(inputs)
+        # [B, S, hiddens]
+        out = F.normalize(self.encoder(x, mask=mask), dim=-1)
+        return out * mask[..., None]
