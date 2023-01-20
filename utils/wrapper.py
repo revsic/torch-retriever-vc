@@ -84,24 +84,43 @@ class TrainingWrapper:
         ce_fst = F.cross_entropy(
             torch.softmax(logits.transpose(1, 2), dim=1),
             codebook[:, 0])
+        # metric purpose
+        metric_fst = (logits.argmax(dim=-1) == codebook[:, 0]).float().mean().item()
 
         # alias
         timesteps = self.config.model.timesteps
-        # [B], [0, timesteps - 1]-ranged.
-        steps = (torch.rand(bsize, device=self.device) * timesteps).long()
+        # [B], [0, timesteps - 1)
+        steps = (torch.rand(bsize, device=self.device) * (timesteps - 1)).long()
         # [timesteps - 1, embeds]
         embeds = self.model.steps(timesteps - 1)
+
         # [B, S, contexts]
         codes = torch.stack([
-            self.model.codebooks[i](code[i])
-            for code, i in zip(codebook, steps)], dim=0)
+            torch.stack([
+                self.model.codebooks[j](code[j])
+                for j in range(i + 1)], dim=0).sum(dim=0)
+            for code, i in zip(codebook, steps.tolist())], dim=0)
         # [B, S, tokens]
         logits = self.model.dec_rst.forward(
             codes, ling, style, steps, embeds[steps])
+        # [B]
+        aranger = torch.arange(bsize, device=self.device)
         # []
         ce_rst = F.cross_entropy(
             torch.softmax(logits.transpose(1, 2), dim=1),
-            codebook[torch.arange(bsize, device=self.device), steps])
+            codebook[aranger, steps + 1])
+        # metric purpose
+        with torch.no_grad():
+            # [B]
+            acc_rst = (logits.argmax(dim=-1) == codebook[aranger, steps + 1]).float().mean(dim=-1)
+            # []
+            metric_rst = acc_rst.mean().item()
+            # step-wise aggregation
+            steps = steps.tolist()
+            agg = {s: [] for s in steps}
+            for s, a in zip(steps, acc_rst.tolist()):
+                agg[s].append(a)
+            metric_agg = {s + 1: sum(a) / max(len(a), 1) for s, a in agg.items()}
 
         # [2, B, L, ling_hiddens]
         ling_ex = torch.stack([
@@ -113,7 +132,7 @@ class TrainingWrapper:
         conf_t = self.config.train
         n_adj, n_cand, kappa = conf_t.num_adj, conf_t.num_cand, conf_t.kappa
         # [B, L], positive
-        pos = ling_ex.prod(dim=0).sum(dim=-2) / kappa
+        pos = ling_ex.prod(dim=0).sum(dim=-1) / kappa
         # [2, B, L, L]
         confusion = torch.matmul(ling_ex, ling_ex.transpose(2, 3)) / kappa
         # [L]
@@ -128,7 +147,7 @@ class TrainingWrapper:
                 1.)
             for i in range(num_tokens)])
         # include self
-        mask = mask + torch.eye(bsize, device=self.device)
+        mask = mask + torch.eye(num_tokens, device=self.device)
         # [2, B, L, L(sum = candidates)], negative case
         masked = confusion.masked_fill(~mask.to(torch.bool), -np.inf)
         # [2, B, L], negative case
@@ -136,11 +155,20 @@ class TrainingWrapper:
         # []
         cont_loss = -torch.logsumexp(pos - neg, dim=-1).sum(dim=0).mean()
 
+        # metric purpose
+        metric_pos = pos.mean().item()
+        metric_neg = ((confusion * mask).sum(dim=-1) / n_cand).mean().item()
+
         # []
         loss = ce_fst + ce_rst + conf_t.lambda_cont * cont_loss
         losses = {
-            'loss': loss.item(),
-            'ce-fst': ce_fst.item(),
-            'ce-rst': ce_rst.item(),
-            'cont': cont_loss.item()}
+            'loss/loss': loss.item(),
+            'loss/ce-fst': ce_fst.item(),
+            'loss/ce-rst': ce_rst.item(),
+            'loss/cont': cont_loss.item(),
+            'metric/neg': metric_neg,
+            'metric/pos': metric_pos,
+            'metric/fst': metric_fst,
+            'metric/rst': metric_rst}
+        losses.update({f'metric-aux/step{i}': acc for i, acc in metric_agg.items()})
         return loss, losses
