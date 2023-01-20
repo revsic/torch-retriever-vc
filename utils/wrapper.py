@@ -28,6 +28,7 @@ class TrainingWrapper:
         self.encodec = EncodecWrapper(config.model.sr).to(device)
         # alias
         self.seglen = self.config.train.seglen
+        self.lambda_cont = self.config.train.cont_start
 
     def random_segment(self, bunch: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         """Segment the spectrogram and audio into fixed sized array.
@@ -162,7 +163,7 @@ class TrainingWrapper:
         metric_neg = ((confusion * mask).sum(dim=-1) / n_cand).mean().item() * kappa
 
         # []
-        loss = ce_fst + ce_rst + conf_t.lambda_cont * cont_loss
+        loss = ce_fst + ce_rst + self.lambda_cont * cont_loss
         losses = {
             'loss/loss': loss.item(),
             'loss/ce-fst': ce_fst.item(),
@@ -171,6 +172,13 @@ class TrainingWrapper:
             'metric/neg': metric_neg,
             'metric/pos': metric_pos,
             'metric/fst': metric_fst,
-            'metric/rst': metric_rst}
+            'metric/rst': metric_rst,
+            'common/warmup': self.lambda_cont}
         losses.update({f'metric-aux/step{i}': acc for i, acc in metric_agg.items()})
         return loss, losses
+
+    def update_warmup(self):
+        """Update the content loss weights.
+        """
+        conf_t = self.config.train
+        self.lambda_cont = min(self.lambda_cont + conf_t.cont_start, conf_t.cont_end)

@@ -102,6 +102,8 @@ class Trainer:
                     pbar.update()
                     pbar.set_postfix({'loss': loss.item(), 'step': step})
 
+                    self.wrapper.update_warmup()
+
                     for key, val in losses.items():
                         self.train_log.add_scalar(key, val, step)
 

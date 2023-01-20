@@ -28,7 +28,8 @@ class TrainConfig:
         self.g_max = 12
 
         # contents loss
-        self.lambda_cont = 5
+        self.cont_start = 1e-5
+        self.cont_end = 10
         self.num_adj = 10
         self.num_cand = 15
         self.kappa = 0.1
@@ -41,7 +42,7 @@ class TrainConfig:
         self.pin_memory = True
 
         # train iters
-        self.epoch = 50
+        self.epoch = 1000
 
         # segment length
         sec = 2
