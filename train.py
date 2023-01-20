@@ -130,13 +130,13 @@ class Trainer:
 
                         self.train_log.add_image(
                             # [3, M, T]
-                            'train/gt', self.mel_img(seg[idx].cpu().numpy()), step)
+                            'train/gt-mel', self.mel_img(seg[idx].cpu().numpy()), step)
                         self.train_log.add_audio(
-                            'train/gt', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
+                            'train/gt-aud', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
                         self.train_log.add_image(
-                            'train/synth', self.mel_img(rctor.cpu().numpy()), step)
+                            'train/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
                         self.train_log.add_audio(
-                            'train/synth', rctor[None], step, sample_rate=self.config.model.sr)
+                            'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
 
             cumul = {key: [] for key in losses}
             cumul.update({f'metric-aux/step{i + 1}': [] for i in range(config.model.timesteps - 1)})
@@ -162,18 +162,18 @@ class Trainer:
                     # [T], gt plot
                     speech = speeches[idx, :len_]
                     self.test_log.add_image(
-                        f'test{i}/gt', self.mel_img(speech.cpu().numpy()), step)
+                        f'test{i}/gt-mel', self.mel_img(speech.cpu().numpy()), step)
                     self.test_log.add_audio(
-                        f'test{i}/gt', speech[None], step, sample_rate=self.config.model.sr)
+                        f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
 
                     # [1, tiemsteps, S]
                     codes, _ = self.model.forward(speech[None])
                     # [T]
                     rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
                     self.test_log.add_image(
-                        f'test{i}/synth', self.mel_img(rctor.cpu().numpy()), step)
+                        f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
                     self.test_log.add_audio(
-                        f'test{i}/synth', rctor[None], step, sample_rate=self.config.model.sr)
+                        f'test{i}/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
                 self.model.train()
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
