@@ -173,8 +173,8 @@ class Refiner(nn.Module):
         # instead of positional encoding
         self.preconv = nn.Sequential(
             nn.Conv1d(
-                contexts, contexts, kernels,
-                padding=kernels // 2, groups=contexts, bias=False),
+                channels, channels, kernels,
+                padding=kernels // 2, groups=channels, bias=False),
             nn.ReLU())
         # attentions
         self.blocks = nn.ModuleList([
@@ -223,7 +223,7 @@ class Refiner(nn.Module):
         # [B, T, channels], alternatives of positional encoding
         x = self.preconv(x.transpose(1, 2)).transpose(1, 2)
         # blocks x [B, channels]
-        embeds = self.mapper(embed).chunk(len(self.blocks))
+        embeds = self.mapper(embed).chunk(len(self.blocks), dim=-1)
         for (selfattn, linkattn), embed in zip(self.blocks, embeds):
             # [B, T, C], add time-embeddings
             x = x + embed[:, None]
