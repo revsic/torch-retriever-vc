@@ -59,13 +59,11 @@ class LinkAttention(nn.Module):
             mask_c = mask[..., None]
             # [B, T, T]
             mask = mask[:, None] * mask[..., None]
-        # [B, S, C]
-        linkkey = self.linkkey.repeat(x.shape[0], 1, 1)
         for selfattn, linkattn in self.blocks:
             # [B, T, C]
             x = selfattn(x, x, x, mask=mask)
             # [B, T, C]
-            x = linkattn(x, linkkey, style, mask=mask_c)
+            x = linkattn(x, self.linkkey, style, mask=mask_c)
         if mask is not None:
             # [B, T, C], masking for FFN.
             x = x * mask_c
