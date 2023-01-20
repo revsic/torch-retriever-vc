@@ -20,11 +20,10 @@ class Config:
         self.embeds = 512
 
         # linguistic
-        self.ling_kernels = 31
-        self.ling_hiddens = 128
-        self.ling_heads = 2
+        self.ling_hiddens = 256
+        self.ling_heads = 4
         self.ling_ffn = 512
-        self.ling_blocks = 6
+        self.ling_blocks = 4
         self.ling_dropout = 0.1
 
         # style retriever
@@ -34,16 +33,15 @@ class Config:
         self.ret_dropout = 0.1
 
         # decoder
-        self.fst_kernels = 31
         self.fst_heads = 4
         self.fst_ffn = 2048
-        self.fst_blocks = 8
+        self.fst_blocks = 12
         self.fst_dropout = 0.1
 
         self.rst_kernels = 31
         self.rst_heads = 4
         self.rst_ffn = 2048
-        self.rst_blocks = 8
+        self.rst_blocks = 12
         self.rst_dropout = 0.1
 
         self.kappa = 0.1
