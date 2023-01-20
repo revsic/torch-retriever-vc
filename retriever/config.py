@@ -24,7 +24,7 @@ class Config:
         self.ling_heads = 4
         self.ling_ffn = 512
         self.ling_blocks = 4
-        self.ling_dropout = 0.1
+        self.ling_dropout = 0.5
 
         # style retriever
         self.ret_ffn = 512
@@ -36,12 +36,11 @@ class Config:
         self.fst_heads = 4
         self.fst_ffn = 2048
         self.fst_blocks = 12
-        self.fst_dropout = 0.1
+        self.fst_dropout = 0.5
 
-        self.rst_kernels = 31
         self.rst_heads = 4
         self.rst_ffn = 2048
         self.rst_blocks = 12
-        self.rst_dropout = 0.1
+        self.rst_dropout = 0.5
 
         self.kappa = 0.1

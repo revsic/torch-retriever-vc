@@ -68,7 +68,6 @@ class Retriever(nn.Module):
 
         self.dec_rst = Refiner(
             config.contexts,
-            config.rst_kernels,
             config.ling_hiddens,
             config.styles,
             config.embeds,

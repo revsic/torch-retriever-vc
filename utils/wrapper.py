@@ -127,8 +127,6 @@ class TrainingWrapper:
         ling_ex = torch.stack([
             ling,
             self.model.linguistic.forward(ling2)], dim=0)
-        # normalize for cossim
-        ling_ex = F.normalize(ling_ex, dim=-1)
         # L
         num_tokens = ling_ex.shape[2]
         # alias

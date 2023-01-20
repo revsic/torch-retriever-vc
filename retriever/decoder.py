@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention.transformer import AddNorm, AuxSequential, FeedForward, MultiheadAttention
+from .attention.transformer import \
+    AddNorm, AuxSequential, FeedForward, MultiheadAttention, SinusoidalPE
 
 
 class MultiLink(nn.Module):
@@ -61,7 +62,6 @@ class Refiner(nn.Module):
     """
     def __init__(self,
                  channels: int,
-                 kernels: int,
                  contexts: int,
                  styles: int,
                  embeds: int,
@@ -76,7 +76,6 @@ class Refiner(nn.Module):
         """Initializer.
         Args:
             channels: size of the input channels.
-            kernels: size of the convolutional kernels, alternatives of PE.
             contexts: size of the context channels.
             styles: size of the style channels.
             embeds: size of the embedding channels.
@@ -91,12 +90,7 @@ class Refiner(nn.Module):
         """
         super().__init__()
         self.mapper = nn.Linear(embeds, channels * blocks)
-        # instead of positional encoding
-        self.preconv = nn.Sequential(
-            nn.Conv1d(
-                channels, channels, kernels,
-                padding=kernels // 2, groups=channels, bias=False),
-            nn.ReLU())
+        self.pe = SinusoidalPE(channels)
         # attentions
         self.blocks = nn.ModuleList([
             nn.ModuleList([
@@ -141,8 +135,8 @@ class Refiner(nn.Module):
             mask_s = mask[..., 0]
             # [B, T, T]
             mask_s = mask_s[:, None] * mask_s[..., None]
-        # [B, T, channels], alternatives of positional encoding
-        x = self.preconv(x.transpose(1, 2)).transpose(1, 2)
+        # [B, T, channels], positional encoding
+        x = x + self.pe.forward(x.shape[1])
         # blocks x [B, channels]
         embeds = self.mapper(embed).chunk(len(self.blocks), dim=-1)
         for (selfattn, linkattn), embed in zip(self.blocks, embeds):
