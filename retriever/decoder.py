@@ -15,43 +15,42 @@ class MultiLink(nn.Module):
                  channels: int,
                  contexts: int,
                  styles: int,
-                 heads: int,
-                 prototypes: int):
+                 heads: int):
         """Initializer.
         Args:
             channels: size of the input channels.
             contexts: size of the context channels.
             styles: size of the style channels.
             heads: size of the FFN hidden channels.
-            prototypes: the number of the style vectors.
         """
         super().__init__()
-        self.linkkey = nn.Parameter(torch.randn(1, prototypes, styles))
+        self.proj = nn.Linear(channels, channels * 2)
         self.link_style = MultiheadAttention(
-            styles, channels, channels // 2, heads // 2)
+            styles, channels, channels, heads)
         self.link_context = MultiheadAttention(
-            contexts, channels, channels // 2, heads // 2)
-        self.proj = nn.Linear(channels, channels, bias=False)
+            contexts, channels, channels, heads)
 
     def forward(self,
                 x: torch.Tensor,
+                key: torch.Tensor,
                 style: torch.Tensor,
                 context: torch.Tensor,
                 mask: Optional[torch.Tensor]) -> torch.Tensor:
         """Link the information.
         Args:
             x: [torch.float32; [B, T, channels]], input query.
+            key: [torch.float32; [B, prototypes, styles]], link key.
             style: [torch.float32; [B, prototypes, styles]], style vector.
             context: [torch.float32; [B, S, contexts]], context vector.
             mask: [torch.float32; [B, T, S]], attention mask.
         Returns:
             [torch.float32; [B, T, channels]], attended.
         """
-        # [B, T, channels // 2]
-        x_a = self.link_style.forward(x, self.linkkey, style)
+        # [B, T, channels]
+        x_a = self.link_style.forward(x, key, style)
         x_b = self.link_context.forward(x, context, context, mask=mask)
         # [B, T, channels]
-        x = self.proj(torch.cat([x_a, x_b], dim=-1))
+        x = x_a + x_b
         if mask is not None:
             x = x[..., :1]
         return x
@@ -92,6 +91,7 @@ class Refiner(nn.Module):
         self.mapper = nn.Linear(embeds, channels * blocks)
         self.pe = SinusoidalPE(channels)
         # attentions
+        self.linkkey = nn.Parameter(torch.randn(1, prototypes, styles))
         self.blocks = nn.ModuleList([
             nn.ModuleList([
                 # self attention
@@ -102,7 +102,7 @@ class Refiner(nn.Module):
                 AuxSequential(
                     AddNorm(
                         channels,
-                        MultiLink(channels, contexts, styles, heads, prototypes)),
+                        MultiLink(channels, contexts, styles, heads)),
                     AddNorm(channels, FeedForward(channels, ffn, dropout)))])
             for _ in range(blocks)])
         # classification head
@@ -145,7 +145,7 @@ class Refiner(nn.Module):
             # [B, T, C]
             x = selfattn(x, x, x, mask=mask_s)
             # [B, T, C]
-            x = linkattn(x, style, contents, mask=mask)
+            x = linkattn(x, self.linkkey, style, contents, mask=mask)
         # [B, T, tokens]
         x = torch.matmul(
             F.normalize(self.proj(x), p=2, dim=-1),
