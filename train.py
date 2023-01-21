@@ -120,25 +120,25 @@ class Trainer:
                     self.train_log.add_scalar(
                         'common/learning-rate', self.optim.param_groups[0]['lr'], step)
 
-                    # if it % (len(self.loader) // 50) == 0:
-                    #     idx = Trainer.LOG_IDX
-                    #     with torch.no_grad():
-                    #         self.model.eval()
-                    #         # [1, tiemsteps, S]
-                    #         codes, _ = self.model.forward(seg[idx:idx + 1])
-                    #         # [T]
-                    #         rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
-                    #         self.model.train()
+                    if it % (len(self.loader) // 50) == 0:
+                        idx = Trainer.LOG_IDX
+                        with torch.no_grad():
+                            self.model.eval()
+                            # [1, tiemsteps, S]
+                            codes, _ = self.model.forward(seg[idx:idx + 1])
+                            # [T]
+                            rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                            self.model.train()
 
-                    #     self.train_log.add_image(
-                    #         # [3, M, T]
-                    #         'train/gt-mel', self.mel_img(seg[idx].cpu().numpy()), step)
-                    #     self.train_log.add_audio(
-                    #         'train/gt-aud', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
-                    #     self.train_log.add_image(
-                    #         'train/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
-                    #     self.train_log.add_audio(
-                    #         'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
+                        self.train_log.add_image(
+                            # [3, M, T]
+                            'train/gt-mel', self.mel_img(seg[idx].cpu().numpy()), step)
+                        self.train_log.add_audio(
+                            'train/gt-aud', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
+                        self.train_log.add_image(
+                            'train/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
+                        self.train_log.add_audio(
+                            'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
 
             cumul = {key: [] for key in losses}
             cumul.update({f'metric-aux/step{i + 1}': [] for i in range(config.model.timesteps - 1)})
@@ -151,31 +151,31 @@ class Trainer:
                 # test log
                 for key, val in cumul.items():
                     self.test_log.add_scalar(key, np.mean(val), step)
-                # # [B, T], [B]
-                # speeches, lengths = self.testset.collate(bunch)
-                # # [B]
-                # bsize, = lengths.shape
-                # for i in range(Trainer.LOG_AUDIO):
-                #     idx = (Trainer.LOG_IDX + i) % bsize
-                #     # min-length
-                #     len_ = min(
-                #         lengths[idx].item(),
-                #         int(Trainer.LOG_MAXLEN * self.config.model.sr))
-                #     # [T], gt plot
-                #     speech = speeches[idx, :len_]
-                #     self.test_log.add_image(
-                #         f'test{i}/gt-mel', self.mel_img(speech.cpu().numpy()), step)
-                #     self.test_log.add_audio(
-                #         f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
+                # [B, T], [B]
+                speeches, lengths = self.testset.collate(bunch)
+                # [B]
+                bsize, = lengths.shape
+                for i in range(Trainer.LOG_AUDIO):
+                    idx = (Trainer.LOG_IDX + i) % bsize
+                    # min-length
+                    len_ = min(
+                        lengths[idx].item(),
+                        int(Trainer.LOG_MAXLEN * self.config.model.sr))
+                    # [T], gt plot
+                    speech = speeches[idx, :len_]
+                    self.test_log.add_image(
+                        f'test{i}/gt-mel', self.mel_img(speech.cpu().numpy()), step)
+                    self.test_log.add_audio(
+                        f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
 
-                #     # [1, tiemsteps, S]
-                #     codes, _ = self.model.forward(speech[None])
-                #     # [T]
-                #     rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
-                #     self.test_log.add_image(
-                #         f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
-                #     self.test_log.add_audio(
-                #         f'test{i}/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
+                    # [1, tiemsteps, S]
+                    codes, _ = self.model.forward(speech[None])
+                    # [T]
+                    rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                    self.test_log.add_image(
+                        f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
+                    self.test_log.add_audio(
+                        f'test{i}/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
                 self.model.train()
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
