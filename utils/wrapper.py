@@ -8,7 +8,6 @@ from config import Config
 from retriever import Retriever
 
 from .augment import Augment
-from .encodec import EncodecWrapper
 
 
 class TrainingWrapper:
@@ -25,7 +24,6 @@ class TrainingWrapper:
         self.config = config
         self.device = device
         self.aug = Augment(config).to(device)
-        self.encodec = EncodecWrapper(config.model.sr).to(device)
         # alias
         self.seglen = self.config.train.seglen
         self.lambda_cont = self.config.train.cont_start
@@ -61,7 +59,7 @@ class TrainingWrapper:
         """
         with torch.no_grad():
             # [B, num_q, S]
-            codebook = self.encodec.forward(seg)
+            codebook = self.model.encodec.forward(seg)
             # [B, S]
             aug1 = self.aug.augment(seg)
             aug2 = self.aug.augment(seg)
@@ -74,10 +72,12 @@ class TrainingWrapper:
         # [B, prototypes, styles]
         style = self.model.retriever.forward(spk)
 
-        book_fst, *_ = self.model.codebooks
+        quantizers = self.model.quantizers
+        quant_fst, *_ = quantizers
         # [B, S, contexts]
-        codes = F.pad(book_fst(codebook[:, 0]),[0, 0, 1, -1])
-        # assign start token
+        codes = self.model.embedding(quant_fst, codebook[:, 0])
+        # [B, S, contexts], assign start token
+        codes = F.pad(codes, [0, 0, 1, -1])
         codes[:, 0] = self.model.start
         # B
         bsize, _, _ = codebook.shape
@@ -100,7 +100,7 @@ class TrainingWrapper:
         # [B, S, contexts]
         codes = torch.stack([
             torch.stack([
-                self.model.codebooks[j](code[j])
+                self.model.embedding(quantizers[j], code[j])
                 for j in range(i + 1)], dim=0).sum(dim=0)
             for code, i in zip(codebook, steps.tolist())], dim=0)
         # [B, S, tokens]

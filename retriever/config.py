@@ -3,6 +3,7 @@ class Config:
     """
     # hardcoded
     ENCODEC_STRIDES = 320
+    ENCODEC_DIM = 128
 
     def __init__(self):
         self.sr = 24000

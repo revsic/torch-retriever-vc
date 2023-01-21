@@ -124,10 +124,10 @@ class Trainer:
                         idx = Trainer.LOG_IDX
                         with torch.no_grad():
                             self.model.eval()
-                            # [1, tiemsteps, S]
-                            codes, _ = self.model.forward(seg[idx:idx + 1])
+                            # [1, T]
+                            rctor, _ = self.model.forward(seg[idx:idx + 1])
                             # [T]
-                            rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                            rctor = rctor.squeeze(dim=0)
                             self.model.train()
 
                         self.train_log.add_image(
@@ -168,10 +168,10 @@ class Trainer:
                     self.test_log.add_audio(
                         f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
 
-                    # [1, tiemsteps, S]
-                    codes, _ = self.model.forward(speech[None])
+                    # [1, T]
+                    rctor, _ = self.model.forward(speech[None])
                     # [T]
-                    rctor = self.wrapper.encodec.decode(codes).squeeze(dim=0)
+                    rctor = rctor.squeeze(dim=0)
                     self.test_log.add_image(
                         f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
                     self.test_log.add_audio(
