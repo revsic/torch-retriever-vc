@@ -70,13 +70,15 @@ class MultiheadAttention(nn.Module):
                 query: torch.Tensor,
                 key: torch.Tensor,
                 value: torch.Tensor,
-                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+                mask: Optional[torch.Tensor] = None,
+                causal: bool = False) -> torch.Tensor:
         """Transform the inputs.
         Args:
             query: [torch.float32; [B, S, queries]], query.
             key: [torch.float32; [B, T, contexts]], key.
             value: [torch.float32; [B, T, contexts]], value.
-            mask: [torch.float32; [B, S, T]], attention mask.
+            mask: [torch.float32; [B, S, T]], attention mask, box form.
+            causal: whether mask the inputs in causal form or not.
         Returns:
             [torch.float32; [B, S, C]], attended.
         """
@@ -95,7 +97,12 @@ class MultiheadAttention(nn.Module):
             query.permute(0, 2, 1, 3),
             key.permute(0, 2, 3, 1)) * (self.channels ** -0.5)
         if mask is not None:
-            score.masked_fill_(~mask[:, None, :1].to(torch.bool), -np.inf)
+            # [B, _, T]
+            mask_s = mask + torch.full_like(mask, -np.inf).triu(diagonal=1) \
+                if causal \
+                else mask[:, :1]
+            # masking
+            score.masked_fill_(~mask_s[:, None].to(torch.bool), -np.inf)
         weights = torch.softmax(score, dim=-1)
         # [B, H, S, C // H]
         out = torch.matmul(weights, value.transpose(1, 2))
