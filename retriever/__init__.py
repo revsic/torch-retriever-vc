@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from .attention import AuxSequential, CrossAttention, LinkAttention, SinusoidalPE
 from .config import Config
-from .decoder import Refiner
+from .decoder import Decoder
 from .linguistic import LinguisticEncoder
 from .wav2vec2 import Wav2Vec2Wrapper
 
@@ -43,17 +43,20 @@ class Retriever(nn.Module):
             config.ret_blocks,
             config.ret_dropout)
 
-        self.proj_fst = nn.Linear(config.ling_hiddens, config.contexts)
-        self.dec_fst = AuxSequential(
-            LinkAttention(
-                config.contexts,
-                config.styles,
-                config.fst_heads,
-                config.fst_ffn,
-                config.prototypes,
-                config.fst_blocks,
-                config.fst_dropout),
-            nn.Linear(config.contexts, config.encodecs))
+        self.start = nn.Parameter(torch.randn(config.contexts))
+        self.dec_fst = Decoder(
+            config.contexts,
+            config.ling_hiddens,
+            config.styles,
+            config.embeds,
+            config.fst_heads,
+            config.fst_ffn,
+            config.prototypes,
+            config.fst_blocks,
+            1,
+            config.encodecs,
+            causal=True,
+            dropout=config.fst_dropout)
 
         self.steps = nn.Sequential(
             SinusoidalPE(config.pe, config.timesteps - 1),
@@ -66,7 +69,7 @@ class Retriever(nn.Module):
             nn.Embedding(config.encodecs, config.contexts)
             for _ in range(config.timesteps - 1)])
 
-        self.dec_rst = Refiner(
+        self.dec_rst = Decoder(
             config.contexts,
             config.ling_hiddens,
             config.styles,
@@ -77,7 +80,7 @@ class Retriever(nn.Module):
             config.rst_blocks,
             config.timesteps - 1,
             config.encodecs,
-            config.rst_dropout)
+            dropout=config.rst_dropout)
 
     def forward(self,
                 audio: torch.Tensor,
