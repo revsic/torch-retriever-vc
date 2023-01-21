@@ -74,17 +74,21 @@ class TrainingWrapper:
         # [B, prototypes, styles]
         style = self.model.retriever.forward(spk)
 
-        # B, S
-        bsize, _, clen = codebook.shape
-        # [B, contexts, S]
-        ling_fst = F.interpolate(
-            self.model.proj_fst(ling).transpose(1, 2), size=clen, mode='linear')
+        # [B, S, contexts]
+        codes = self.model.codebooks[0](codebook[:, 0])
+        # [B, S, contexts], assign start token
+        codes = F.pad(codes,[0, 0, 1, -1])
+        codes[:, 0] = self.model.start
+
+        # B
+        bsize, _, _ = codebook.shape
         # [B, S, tokens]
-        logits = self.model.dec_fst.forward(ling_fst.transpose(1, 2), style)
+        logits = self.model.dec_fst.forward(
+            codes, ling, style,
+            # placeholder
+            0, torch.zeros(bsize, self.config.model.embeds, device=self.device))
         # []
-        ce_fst = F.cross_entropy(
-            torch.softmax(logits.transpose(1, 2), dim=1),
-            codebook[:, 0])
+        ce_fst = F.cross_entropy(logits.transpose(1, 2), codebook[:, 0])
         # metric purpose
         metric_fst = (logits.argmax(dim=-1) == codebook[:, 0]).float().mean().item()
 
@@ -108,8 +112,7 @@ class TrainingWrapper:
         aranger = torch.arange(bsize, device=self.device)
         # []
         ce_rst = F.cross_entropy(
-            torch.softmax(logits.transpose(1, 2), dim=1),
-            codebook[aranger, steps + 1])
+            logits.transpose(1, 2), codebook[aranger, steps + 1])
         # metric purpose
         with torch.no_grad():
             # [B]
