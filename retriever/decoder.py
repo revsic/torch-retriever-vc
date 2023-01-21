@@ -56,7 +56,7 @@ class MultiLink(nn.Module):
         return x
 
 
-class Refiner(nn.Module):
+class Decoder(nn.Module):
     """Link attention to retrieve content-specific style for reconstruction.
     """
     def __init__(self,
@@ -70,6 +70,7 @@ class Refiner(nn.Module):
                  blocks: int,
                  steps: int,
                  tokens: int,
+                 causal: bool = False,
                  dropout: float = 0.):
         """Initializer.
         Args:
@@ -83,6 +84,7 @@ class Refiner(nn.Module):
             blocks: the number of the attention blocks.
             steps: the number of the timesteps.
             tokens: the number of the output tokens.
+            causal: whether assume autoregressive model or not.
             dropout: dropout rates for FFN.
         """
         super().__init__()
@@ -106,6 +108,8 @@ class Refiner(nn.Module):
         # classification head
         self.weight = nn.Parameter(torch.randn(steps, channels, tokens))
         self.bias = nn.Parameter(torch.randn(steps, tokens))
+        # alias
+        self.causal = causal
 
     def forward(self,
                 x: torch.Tensor,
@@ -139,7 +143,7 @@ class Refiner(nn.Module):
             # [B, T, C], add time-embeddings
             x = x + embed[:, None]
             # [B, T, C]
-            x = selfattn(x, x, x, mask=mask_s)
+            x = selfattn(x, x, x, causal=self.causal, mask=mask_s)
             # [B, T, C]
             x = linkattn(x, self.linkkey, style, contents, mask=mask)
         # [B, T, tokens]
