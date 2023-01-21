@@ -116,42 +116,45 @@ class Retriever(nn.Module):
         mask_c = (
             torch.arange(clen, device=device)[None]
             < codelen[:, None]).to(torch.float32)
-        # [B, contexts, S], length-aware interpolation
-        ling_fst = torch.cat([
-            F.pad(
-                F.interpolate(l[None, :, :v.item()], size=s.item(), mode='linear'),
-                [0, clen - s.item()])
-            for l, v, s in zip(
-                self.proj_fst(ling).transpose(1, 2),
-                mask.sum(dim=-1).long(),
-                codelen)], dim=0)
 
         # [B, prototypes, styles], selecting style
         refstyle = refstyle or style
-        # [B, S, tokens]
-        logits = self.dec_fst.forward(ling_fst.transpose(1, 2), refstyle, mask=mask_c)
-        # [B x S, tokens]
-        prob = torch.softmax(logits, dim=-1).view(-1, self.config.encodecs)
-        # [B, S], sampling
-        code = torch.multinomial(prob, 1).view(bsize, -1)
+        # S x [B, 1], [1, 1, contexts], start token.
+        codes, cumul = [], self.start[None, None]
+        # split code book
+        book_fst, *book_rst = self.codebooks
+        # [1, E]
+        null = torch.zeros(1, self.config.embeds, device=device)
+        for _ in range(clen):
+            # [B, _, tokens]
+            logits = self.dec_fst.forward(cumul, ling, style, 0, null)
+            # [B, tokens]
+            prob = logits[:, -1].softmax(dim=-1)
+            # [B, 1], sampling
+            code = torch.multinomial(prob, 1)
+            codes.append(code)
+            # [B, _ + 1, tokens]
+            cumul = torch.cat([cumul, book_fst(code)], dim=1)
+        # [B, S]
+        code = torch.cat(codes, dim=-1)
         # timesteps x [B, S], [B, S, contexts]
-        codes, cumsum = [code], torch.zeros(bsize, clen, self.config.contexts, device=device)
+        codes, cumul = [code], cumul[:, 1:] * mask_c[..., None]
         # [B, S, L]
         mask = mask_c[..., None] * mask[:, None]
         # [timesteps - 1, embeds]
         embeds = self.steps(self.config.timesteps - 1)
         # [embeds], [encodecs, contexts]
-        for i, (pe, codebook) in enumerate(zip(embeds, self.codebooks)):
-            # [B, S, contexts]
-            cumsum = cumsum + codebook(code) * mask_c[..., None]
-            # [1]
-            steps = torch.tensor([i], device=device)
+        for i, (embed, book) in enumerate(zip(embeds, book_rst + [None])):
             # [B, S, tokens]
             logits = self.dec_rst.forward(
-                cumsum, ling, refstyle, steps, pe[None], mask=mask)
+                cumul, ling, refstyle, i, embed[None], mask=mask)
             # [B, S], greedy search
             code = logits.argmax(dim=-1)
             codes.append(code)
+            # cumulate
+            if book is not None:
+                # [B, S, contexts]
+                cumul = cumul + book(code) * mask_c[..., None] 
         # [B, timesteps, S]
         return torch.stack(codes, dim=1) * mask_c[:, None].long(), style
 

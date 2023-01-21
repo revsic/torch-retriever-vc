@@ -74,19 +74,17 @@ class TrainingWrapper:
         # [B, prototypes, styles]
         style = self.model.retriever.forward(spk)
 
+        book_fst, *_ = self.model.codebooks
         # [B, S, contexts]
-        codes = self.model.codebooks[0](codebook[:, 0])
-        # [B, S, contexts], assign start token
-        codes = F.pad(codes,[0, 0, 1, -1])
+        codes = F.pad(book_fst(codebook[:, 0]),[0, 0, 1, -1])
+        # assign start token
         codes[:, 0] = self.model.start
-
         # B
         bsize, _, _ = codebook.shape
+        # [1, E], placeholder
+        null = torch.zeros(1, self.config.model.embeds, device=self.device)
         # [B, S, tokens]
-        logits = self.model.dec_fst.forward(
-            codes, ling, style,
-            # placeholder
-            0, torch.zeros(bsize, self.config.model.embeds, device=self.device))
+        logits = self.model.dec_fst.forward(codes, ling, style, 0, null)
         # []
         ce_fst = F.cross_entropy(logits.transpose(1, 2), codebook[:, 0])
         # metric purpose
