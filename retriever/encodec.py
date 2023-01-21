@@ -26,6 +26,7 @@ class EncodecWrapper(nn.Module):
         super().__init__()
         # return evalution mode
         self.model = EncodecModel.encodec_model_24khz()
+        self.model.set_target_bandwidth(6.)
         self.resampler = torchaudio.transforms.Resample(sr, self.model.sample_rate)
         # alias
         self.num_q = self.model.quantizer.n_q
