@@ -12,9 +12,9 @@ class TrainConfig:
             hop: stft hop length.
         """
         # optimizer
-        self.learning_rate = 4e-5
+        self.learning_rate = 1e-4
         self.beta1 = 0.9
-        self.beta2 = 0.999
+        self.beta2 = 0.99
 
         # augment
         self.pitch_shift = 2.
@@ -29,7 +29,7 @@ class TrainConfig:
 
         # contents loss
         self.cont_start = 1e-5
-        self.cont_end = 10
+        self.cont_end = 1
         self.num_adj = 10
         self.num_cand = 15
         self.kappa = 0.1
