@@ -61,7 +61,7 @@ class Trainer:
         # training wrapper
         self.wrapper = TrainingWrapper(model, config, device)
 
-        self.optim = torch.optim.Adam(
+        self.optim = torch.optim.AdamW(
             self.model.parameters(),
             config.train.learning_rate,
             (config.train.beta1, config.train.beta2))
