@@ -61,7 +61,7 @@ class Trainer:
         # training wrapper
         self.wrapper = TrainingWrapper(model, config, device)
 
-        self.optim = torch.optim.AdamW(
+        self.optim = torch.optim.Adam(
             self.model.parameters(),
             config.train.learning_rate,
             (config.train.beta1, config.train.beta2))
@@ -88,6 +88,8 @@ class Trainer:
         """
         self.model.train()
         step = epoch * len(self.loader)
+        # for restarting
+        self.wrapper.lambda_cont = (step + 1) * self.config.train.cont_start
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
