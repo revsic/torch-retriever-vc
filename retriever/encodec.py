@@ -67,7 +67,7 @@ class EncodecWrapper(nn.Module):
         """
         if mode:
             import warnings
-            warnings.warn('Wav2Vec2Wrapper does not support training mode')
+            warnings.warn('EncodecWrapper does not support training mode')
         else:
             # super call
             super().train(False)
