@@ -245,13 +245,13 @@ if __name__ == '__main__':
     sr = config.model.sr
     dataset = RealtimeWavDataset(
         speechset.datasets.ConcatReader([
-            speechset.datasets.VCTK('/data1/audio/vctk/VCTK-Corpus', sr),
-            speechset.datasets.LibriTTS('/data1/audio/libritts/LibriTTS/train-clean-360', sr)]),
+            speechset.datasets.VCTK('./datasets/VCTK-Corpus', sr),
+            speechset.datasets.LibriTTS('./datasets/LibriTTS/train-clean-360', sr)]),
         device=device)
     dataset = WeightedRandomWrapper(dataset)
 
     testset = RealtimeWavDataset(
-        speechset.datasets.LibriSpeech('/data1/audio/librispeech/LibriSpeech/test-clean', sr),
+        speechset.datasets.LibriSpeech('./datasets/LibriSpeech/test-clean', sr),
         device=device)
     # shuffle
     rng, idxer = np.random.default_rng(0), testset.indexer
