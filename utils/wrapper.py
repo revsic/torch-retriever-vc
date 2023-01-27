@@ -164,6 +164,7 @@ class TrainingWrapper:
         loss = rctor + self.lambda_cont * cont_loss
         losses = {
             'loss/loss': loss.item(),
+            'loss/rctor': rctor.item(),
             'loss/cont': cont_loss.item(),
             'metric/neg': metric_neg,
             'metric/pos': metric_pos,
