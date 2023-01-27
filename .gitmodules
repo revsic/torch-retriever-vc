@@ -4,3 +4,6 @@
 [submodule "encodec"]
 	path = encodec
 	url = https://github.com/facebookresearch/encodec
+[submodule "hifi-gan"]
+	path = hifi-gan
+	url = https://github.com/jik876/hifi-gan
