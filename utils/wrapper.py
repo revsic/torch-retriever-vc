@@ -65,7 +65,7 @@ class TrainingWrapper:
         # [B, seglen]
         seg = torch.stack([
             F.pad(q[..., s:s + seglen], [0, max(seglen - q.shape[-1], 0)])
-            for q, s in zip(seq, start)], dim=0)
+            for q, s in zip(seq, start.tolist())], dim=0)
         return seg, start
 
     def compute_loss(self, speeches: torch.Tensor, lengths: torch.Tensor) \
@@ -100,7 +100,7 @@ class TrainingWrapper:
             spk, _, _ = self.model.wav2vec2.forward(seg)
 
             # [B x 2, seglen]
-            aug = self.aug.augment(seg.repeat(2, 1)).chunk(2, dim=0)
+            aug = self.aug.augment(seg.repeat(2, 1))
             # [B x 2, L, w2v2_channels]
             _, ling, _ = self.model.wav2vec2.forward(aug)
             # [B, L, w2v2_channels]
@@ -114,7 +114,7 @@ class TrainingWrapper:
         # [B, L, contexts]
         states = self.model.proj_context(ling)
         # [B, contexts, S]
-        states = F.interpolate(states.transpose(1, 2), size=mlen, mode='nearest')
+        states = F.interpolate(states.transpose(1, 2), size=self.seglen // hop, mode='nearest')
         # [B, S, contexts]
         states = self.model.decoder.forward(states.transpose(1, 2), style)
         # [B, S, mel]

@@ -259,7 +259,7 @@ if __name__ == '__main__':
     model.to(device)
 
     # HiFi-GAN Wrapper
-    hifigan = HiFiGANWrapper(config.hifi_config, config.hifi_ckpt, device)
+    hifigan = HiFiGANWrapper(args.hifi_config, args.hifi_ckpt, device)
 
     trainer = Trainer(model, hifigan, dataset, testset, config, device)
 
