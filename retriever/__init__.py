@@ -4,10 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .attention import CrossAttention, SinusoidalPE
+from .attention import CrossAttention, LinkAttention
+from .attention.transformer import AddNorm, FeedForward
 from .config import Config
-from .decoder import Decoder
-from .encodec import EncodecWrapper
 from .linguistic import LinguisticEncoder
 from .wav2vec2 import Wav2Vec2Wrapper
 
@@ -22,7 +21,6 @@ class Retriever(nn.Module):
         """
         super().__init__()
         self.config = config
-        self.encodec = EncodecWrapper(config.sr)
         self.wav2vec2 = Wav2Vec2Wrapper(
             config.w2v2_name,
             config.sr)
@@ -45,59 +43,25 @@ class Retriever(nn.Module):
             config.ret_blocks,
             config.ret_dropout)
 
-        self.start = nn.Parameter(torch.randn(config.contexts))
-        self.dec_fst = Decoder(
-            config.contexts,
-            config.ling_hiddens,
-            config.styles,
-            config.embeds,
-            config.fst_heads,
-            config.fst_ffn,
-            config.prototypes,
-            config.fst_blocks,
-            1,
-            config.encodecs,
-            causal=True,
-            dropout=config.fst_dropout)
+        self.proj_context = nn.Sequential(
+            nn.Linear(config.ling_hiddens, config.contexts),
+            AddNorm(
+                config.contexts,
+                FeedForward(config.contexts, config.dec_ffn)))
 
-        self.steps = nn.Sequential(
-            SinusoidalPE(config.pe, config.timesteps - 1),
-            nn.Linear(config.pe, config.embeds),
+        self.decoder = LinkAttention(
+            config.contexts,
+            config.styles,
+            config.dec_heads,
+            config.dec_ffn,
+            config.prototypes,
+            config.dec_blocks,
+            config.dec_dropout)
+        
+        self.detok = nn.Sequential(
+            nn.Linear(config.contexts, config.dec_ffn),
             nn.ReLU(),
-            nn.Linear(config.embeds, config.embeds),
-            nn.ReLU())
-
-        self.proj_code = nn.Linear(Config.ENCODEC_DIM, config.contexts)
-
-        self.dec_rst = Decoder(
-            config.contexts,
-            config.ling_hiddens,
-            config.styles,
-            config.embeds,
-            config.rst_heads,
-            config.rst_ffn,
-            config.prototypes,
-            config.rst_blocks,
-            config.timesteps - 1,
-            config.encodecs,
-            dropout=config.rst_dropout)
-
-    @property
-    def quantizers(self):
-        return self.encodec.model.quantizer.vq.layers
-
-    def embedding(self, vq: 'VectorQuantization', code: torch.Tensor) -> torch.Tensor:
-        """Embed with pretrained encodec vector quantizer.
-        Args:
-            vq: encodec.quantization.core_vq.VectorQuantization
-            code: [torch.long; [...]], code sequence.
-        Returns:
-            [torch.float32; [..., contexts]], projected embedding.
-        """
-        # [..., Config.ENCODEC_DIM]
-        embed = F.embedding(code, vq.codebook.detach())
-        # [..., contexts]
-        return self.proj_code(embed)
+            nn.Linear(config.dec_ffn, config.mel))
 
     def forward(self,
                 audio: torch.Tensor,
@@ -126,60 +90,33 @@ class Retriever(nn.Module):
         style = self.retriever.forward(spk, mask)
 
         # [B]
-        codelen = (audlen / Config.ENCODEC_STRIDES).ceil().long()
+        mellen = (audlen / self.config.hop).ceil().long()
         # S
-        clen = codelen.amax().item()
+        mlen = mellen.amax().item()
         # [B, S]
         mask_c = (
-            torch.arange(clen, device=device)[None]
-            < codelen[:, None]).to(torch.float32)
+            torch.arange(mlen, device=device)[None]
+            < mellen[:, None]).float()
 
+        # [B, L, contexts]
+        states = self.proj_context(ling)
+        # [B, contexts, S], length-aware interpolation
+        states = torch.cat([
+            F.pad(
+                F.interpolate(c[None, :, :l.item()], size=s.item(), mode='nearest'),
+                [0, mlen - s.item()])
+            for c, s, l in zip(
+                states.transpose(1, 2),
+                mellen,
+                mask.sum(dim=-1).long())], dim=0)
         # [B, prototypes, styles], selecting style
-        refstyle = refstyle or style
-        # S x [B, 1], [1, 1, contexts], start token.
-        codes, cumul = [], self.start[None, None]
-        # split code book
-        quant_fst, *quant_rst = self.quantizers
-        # [1, E]
-        null = torch.zeros(1, self.config.embeds, device=device)
-        for _ in range(clen):
-            # [B, _, tokens]
-            logits = self.dec_fst.forward(cumul, ling, style, 0, null)
-            # [B, tokens]
-            prob = logits[:, -1].softmax(dim=-1)
-            # [B, 1], sampling
-            code = torch.multinomial(prob, 1)
-            codes.append(code)
-            # [B, _ + 1, contexts]
-            cumul = torch.cat([cumul, self.embedding(quant_fst, code)], dim=1)
-        # [B, S]
-        code = torch.cat(codes, dim=-1)
-        # timesteps x [B, S], [B, S, contexts]
-        codes, cumul = [code], cumul[:, 1:] * mask_c[..., None]
-        # [B, S, L]
-        mask = mask_c[..., None] * mask[:, None]
-        # [timesteps - 1, embeds]
-        embeds = self.steps(self.config.timesteps - 1)
-        # [embeds], [encodecs, contexts]
-        for i, (embed, quant) in enumerate(zip(embeds, quant_rst + [None])):
-            # [B, S, tokens]
-            logits = self.dec_rst.forward(
-                cumul, ling, refstyle, i, embed[None], mask=mask)
-            # [B, S], greedy search
-            code = logits.argmax(dim=-1)
-            codes.append(code)
-            # [B, S, contexts], cumulate
-            cumul = cumul + self.embedding(quant, code) * mask_c[..., None] 
-        # [B, timesteps, S]
-        codes = torch.stack(codes, dim=1) * mask_c[:, None].long()
-        # [B, T']
-        wav = self.encodec.decode(codes)
-        # masking
-        mask = (
-            torch.arange(timesteps, device=device)[None]
-            < audlen[:, None]).to(device)
-        # [B, T], [B, prototypes, styles]
-        return wav[:, :timesteps] * mask, style
+        if refstyle is None:
+            refstyle = style
+        # [B, S, contexts]
+        states = self.decoder.forward(states.transpose(1, 2), refstyle, mask_c)
+        # [B, S, mel]
+        mel = self.detok(states) * mask_c[..., None]
+        return mel, style
 
     def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
         """Save the models.
