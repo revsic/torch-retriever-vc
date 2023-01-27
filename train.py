@@ -141,6 +141,8 @@ class Trainer:
                         self.train_log.add_audio(
                             'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
 
+            self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
+
             cumul = {key: [] for key in losses}
             with torch.no_grad():
                 for bunch in self.testloader:
@@ -161,22 +163,30 @@ class Trainer:
                         int(Trainer.LOG_MAXLEN * self.config.model.sr))
                     # [T], gt plot
                     speech = speeches[idx, :len_]
+                    # [fft // 2 + 1, T / hop]
+                    spec = torch.stft(
+                        speech,
+                        self.config.model.fft,
+                        self.config.model.hop,
+                        self.config.model.win,
+                        self.wrapper.window,
+                        return_complex=True).abs()
+                    # [mel, T // hop]
+                    mel = torch.matmul(self.wrapper.fbank, spec).clamp_min(1e-5).log()
                     self.test_log.add_image(
-                        f'test{i}/gt-mel', self.mel_img(speech.cpu().numpy()), step)
+                        f'test{i}/gt-mel', self.mel_img(mel.T.cpu().numpy()), step)
                     self.test_log.add_audio(
                         f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
 
                     # [1, T / hop, mel]
                     rctor, _ = self.model.forward(speech[None])
                     # [T]
-                    rctor = self.hifigan.forward(rctor.transpose(1, 2)).squeeze(dim=0)
+                    signal = self.hifigan.forward(rctor.transpose(1, 2)).squeeze(dim=0)
                     self.test_log.add_image(
-                        f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
+                        f'test{i}/synth-mel', self.mel_img(rctor.squeeze(dim=0).cpu().numpy()), step)
                     self.test_log.add_audio(
-                        f'test{i}/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
+                        f'test{i}/synth-aud', signal[None], step, sample_rate=self.config.model.sr)
                 self.model.train()
-
-            self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
 
     def mel_img(self, mel: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
