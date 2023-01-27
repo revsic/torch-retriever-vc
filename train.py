@@ -13,6 +13,7 @@ import speechset
 from config import Config
 from retriever import Retriever
 from utils.dataset import RealtimeWavDataset, WeightedRandomWrapper
+from utils.hifigan import HiFiGANWrapper
 from utils.wrapper import TrainingWrapper
 
 
@@ -25,6 +26,7 @@ class Trainer:
 
     def __init__(self,
                  model: Retriever,
+                 hifigan: HiFiGANWrapper,
                  dataset: RealtimeWavDataset,
                  testset: RealtimeWavDataset,
                  config: Config,
@@ -32,6 +34,7 @@ class Trainer:
         """Initializer.
         Args:
             model: retriever model.
+            hifigan: HiFi-GAN wrapper.
             dataset, testset: dataset.
             config: unified configurations.
             device: target computing device.
@@ -73,11 +76,8 @@ class Trainer:
 
         self.ckpt_path = os.path.join(
             config.train.ckpt, config.train.name, config.train.name)
-        # overwrite to the model sampling rate
-        backup, config.data.sr = config.data.sr, config.model.sr
-        self.spec = speechset.utils.MelSTFT(config.data)
-        # rollback
-        config.data.sr = backup
+
+        self.hifigan = hifigan
         # colormap
         self.cmap = np.array(plt.get_cmap('viridis').colors)
 
@@ -93,8 +93,8 @@ class Trainer:
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    _, seg = self.wrapper.random_segment(self.dataset.collate(bunch))
-                    loss, losses = self.wrapper.compute_loss(seg)
+                    speeches, lengths = self.dataset.collate(bunch)
+                    loss, losses, aux = self.wrapper.compute_loss(speeches, lengths)
                     # update
                     self.optim.zero_grad()
                     loss.backward()
@@ -125,20 +125,19 @@ class Trainer:
                     if it % (len(self.loader) // 50) == 0:
                         idx = Trainer.LOG_IDX
                         with torch.no_grad():
-                            self.model.eval()
-                            # [1, T]
-                            rctor, _ = self.model.forward(seg[idx:idx + 1])
-                            # [T]
-                            rctor = rctor.squeeze(dim=0)
-                            self.model.train()
-
+                            # [seglen, mel]
+                            mel = aux['rctor'][idx]
+                            # [seglen x hop]
+                            rctor = self.hifigan.forward(
+                                torch.tensor(mel.T[None], device=self.wrapper.device)).squeeze(dim=0)
                         self.train_log.add_image(
                             # [3, M, T]
-                            'train/gt-mel', self.mel_img(seg[idx].cpu().numpy()), step)
+                            'train/gt-mel', self.mel_img(aux['mel'][idx]), step)
                         self.train_log.add_audio(
-                            'train/gt-aud', seg[idx:idx + 1], step, sample_rate=self.config.model.sr)
+                            'train/gt-aud', aux['seg'][idx, None], step, sample_rate=self.config.model.sr)
+
                         self.train_log.add_image(
-                            'train/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
+                            'train/synth-mel', self.mel_img(mel), step)
                         self.train_log.add_audio(
                             'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
 
@@ -146,15 +145,13 @@ class Trainer:
             cumul.update({f'metric-aux/step{i + 1}': [] for i in range(config.model.timesteps - 1)})
             with torch.no_grad():
                 for bunch in self.testloader:
-                    _, seg = self.wrapper.random_segment(self.testset.collate(bunch))
-                    _, losses = self.wrapper.compute_loss(seg)
+                    speeches, lengths = self.testset.collate(bunch)
+                    _, losses, _ = self.wrapper.compute_loss(speeches, lengths)
                     for key, val in losses.items():
                         cumul[key].append(val)
                 # test log
                 for key, val in cumul.items():
                     self.test_log.add_scalar(key, np.mean(val), step)
-                # [B, T], [B]
-                speeches, lengths = self.testset.collate(bunch)
                 # [B]
                 bsize, = lengths.shape
                 for i in range(Trainer.LOG_AUDIO):
@@ -170,10 +167,10 @@ class Trainer:
                     self.test_log.add_audio(
                         f'test{i}/gt-aud', speech[None], step, sample_rate=self.config.model.sr)
 
-                    # [1, T]
+                    # [1, T / hop, mel]
                     rctor, _ = self.model.forward(speech[None])
                     # [T]
-                    rctor = rctor.squeeze(dim=0)
+                    rctor = self.hifigan.forward(rctor.transpose(1, 2)).squeeze(dim=0)
                     self.test_log.add_image(
                         f'test{i}/synth-mel', self.mel_img(rctor.cpu().numpy()), step)
                     self.test_log.add_audio(
@@ -182,15 +179,13 @@ class Trainer:
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim)
 
-    def mel_img(self, audio: np.ndarray) -> np.ndarray:
+    def mel_img(self, mel: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
         Args:
-            audio: [np.float32; [T x hop]], audio signal.
+            audio: [np.float32; [T, mel]], audio signal.
         Returns:
             [np.float32; [3, mel, T]], mel-spectrogram in viridis color map.
         """
-        # [T, mel]
-        mel = self.spec(audio)
         # minmax norm in range(0, 1)
         mel = (mel - mel.min()) / (mel.max() - mel.min() + 1e-7)
         # in range(0, 255)
@@ -210,6 +205,8 @@ if __name__ == '__main__':
     parser.add_argument('--load-epoch', default=None, type=int)
     parser.add_argument('--name', default=None)
     parser.add_argument('--auto-rename', default=False, action='store_true')
+    parser.add_argument('--hifi-ckpt', default=None)
+    parser.add_argument('--hifi-config', default=None)
     args = parser.parse_args()
 
     # seed setting
@@ -261,7 +258,10 @@ if __name__ == '__main__':
     model = Retriever(config.model)
     model.to(device)
 
-    trainer = Trainer(model, dataset, testset, config, device)
+    # HiFi-GAN Wrapper
+    hifigan = HiFiGANWrapper(config.hifi_config, config.hifi_ckpt, device)
+
+    trainer = Trainer(model, hifigan, dataset, testset, config, device)
 
     # loading
     if args.load_epoch is not None:
