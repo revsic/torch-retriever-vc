@@ -74,7 +74,7 @@ class Retriever(nn.Module):
             audlen: [torch.long; [B]], lengths of the audio.
             refstyle: [torch.float32; [B, prototypes, styles]], style tokens, use it if provided.
         Returns:
-            [torch.long; [B, T]], sytnehsized audio.
+            [torch.long; [B, T / hop, mel]], sytnehsized audio.
             [torch.float32; [B, prototypes, styles]], style of the given audio.
         """
         device = audio.device
