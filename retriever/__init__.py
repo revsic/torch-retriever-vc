@@ -86,7 +86,7 @@ class Retriever(nn.Module):
         spk, ling, mask = self.wav2vec2.forward(audio, audlen)
         # [B, L, ling_hiddens]
         ling = self.linguistic.forward(ling, mask)
-        # [B, prototypes, tyles]
+        # [B, prototypes, styles]
         style = self.retriever.forward(spk, mask)
 
         # [B]
