@@ -1,5 +1,4 @@
 from retriever.config import Config as ModelConfig
-from speechset.config import Config as DataConfig
 
 
 class TrainConfig:
@@ -35,7 +34,6 @@ class TrainConfig:
         self.kappa = 0.1
 
         # loader settings
-        self.split = -500
         self.batch = 64
         self.shuffle = True
         self.num_workers = 4
@@ -64,8 +62,7 @@ class Config:
     """
     def __init__(self):
         self.model = ModelConfig()
-        self.data = DataConfig(batch=None)
-        self.train = TrainConfig(self.model.sr, self.data.hop)
+        self.train = TrainConfig(self.model.sr, self.model.hop)
 
     def dump(self):
         """Dump configurations into serializable dictionary.
