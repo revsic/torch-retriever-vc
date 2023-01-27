@@ -142,7 +142,6 @@ class Trainer:
                             'train/synth-aud', rctor[None], step, sample_rate=self.config.model.sr)
 
             cumul = {key: [] for key in losses}
-            cumul.update({f'metric-aux/step{i + 1}': [] for i in range(config.model.timesteps - 1)})
             with torch.no_grad():
                 for bunch in self.testloader:
                     speeches, lengths = self.testset.collate(bunch)
